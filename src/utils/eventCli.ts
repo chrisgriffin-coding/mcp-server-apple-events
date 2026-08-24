@@ -335,20 +335,19 @@ function resolveLaunchOrThrow(): ResolvedLaunch {
     throw new CliUserError(
       `event CLI binary not found at ${canonicalPath}.
 
-The vendored \`event\` Swift binary is normally built automatically by the
-postinstall script, but that step may have been skipped or failed (for example
-when the package was installed without devDependencies, on a non-macOS host,
-or before Xcode Command Line Tools were available).
+The vendored \`event\` Swift binary is built only by an explicit command. It may
+be absent when the submodule has not been initialized, on a non-macOS host, or
+before Xcode Command Line Tools are available.
 
-To build it manually, clone the repository and run a local build:
-   git clone --recurse-submodules https://github.com/fradser/mcp-server-apple-events.git
-   cd mcp-server-apple-events
-   pnpm install
-   pnpm build
+From the repository root, initialize and build it explicitly:
+   git submodule update --init --recursive
+   pnpm install --ignore-scripts --frozen-lockfile
+   pnpm run build:event
+   pnpm run build:ts
 
-Then use the local path in your Claude Desktop config:
+Then use the local path in your MCP client configuration:
    "command": "node",
-   "args": ["/absolute/path/to/mcp-server-apple-events/bin/run.cjs"]`,
+   "args": ["/absolute/path/to/mcp-server-eventkit/dist/index.js"]`,
     );
   }
 

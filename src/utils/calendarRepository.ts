@@ -188,9 +188,8 @@ class CalendarRepository implements ICalendarRepository {
    * `event` has no first-class "list calendars" command — calendar names are
    * surfaced only as the `calendar` field on each event in `calendar list`.
    * Derive a unique-by-name listing from a wide read window so callers of
-   * `calendar_calendars` see every calendar that contains an event. Calendars
-   * with zero events in the window won't appear; see
-   * `docs/migration-to-event-cli.md` for the workaround.
+   * `calendars_read` see every calendar that contains an event. Calendars with
+   * zero events in the window do not appear.
    */
   async findAllCalendars(): Promise<Calendar[]> {
     const events = await this.listEventsWideWindow();

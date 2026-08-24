@@ -60,7 +60,6 @@ describe('Server Module', () => {
         expect.objectContaining({
           capabilities: {
             tools: {},
-            prompts: {},
           },
           instructions: expect.any(String),
         }),
@@ -73,6 +72,16 @@ describe('Server Module', () => {
         capabilities: Record<string, unknown>;
       };
       expect(callOptions.capabilities).not.toHaveProperty('resources');
+      expect(callOptions.capabilities).not.toHaveProperty('prompts');
+
+      const instructions = (
+        mockServer.mock.calls[0]?.[1] as {
+          instructions: string;
+        }
+      ).instructions;
+      expect(instructions).toContain('read-only');
+      expect(instructions).toContain('No create, update, complete, or delete');
+      expect(instructions).toContain('untrusted');
 
       expect(registerHandlers).toHaveBeenCalledWith(mockServerInstance);
       expect(_server).toBe(mockServerInstance);

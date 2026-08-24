@@ -304,7 +304,7 @@ describe('eventCli', () => {
       ).rejects.toThrow(/event.*binary not found/i);
     });
 
-    it('mentions the postinstall/build path in the not-found message', async () => {
+    it('mentions the explicit build path in the not-found message', async () => {
       mockFindSecureBinaryPath.mockReturnValue({ path: null });
 
       await expect(

@@ -211,8 +211,7 @@ async function main() {
   const disclaimOutputFile = path.join(binDir, 'event-disclaim');
 
   // Run the independent pre-flight checks (toolchain probe, manifest access,
-  // bin dir creation) concurrently so `pnpm install`'s postinstall hook
-  // doesn't serialise them.
+  // bin dir creation) concurrently so an explicit native build stays fast.
   const [swift, sdk, manifestExists] = await Promise.all([
     getSwiftVersion(),
     getSdkVersion(),

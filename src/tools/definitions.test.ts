@@ -1,179 +1,67 @@
-/**
- * Tests for tools/definitions.ts
- */
-
 import { TOOLS } from './definitions.js';
 
-describe('Tools Definitions', () => {
-  describe('TOOLS export', () => {
-    it.each([
-      {
-        name: 'reminders_tasks',
-        description: 'Manages reminder tasks',
-        actions: ['read', 'create', 'update', 'delete'],
-      },
-      {
-        name: 'reminders_lists',
-        description: 'Manages reminder lists',
-        actions: ['read', 'create', 'update', 'delete'],
-      },
-      {
-        name: 'calendar_events',
-        description: 'Manages calendar events',
-        actions: ['read', 'create', 'update', 'delete'],
-      },
-      {
-        name: 'calendar_calendars',
-        description: 'Reads calendar collections',
-        actions: ['read'],
-      },
-    ])('should define $name tool with correct schema and actions', ({
-      name,
-      description,
-      actions,
-    }) => {
-      const tool = TOOLS.find((t) => t.name === name);
-      expect(tool).toBeDefined();
-      expect(tool?.description).toContain(description);
-      expect(tool?.inputSchema).toBeDefined();
-      expect(tool?.inputSchema.type).toBe('object');
+describe('read-only tool definitions', () => {
+  it('advertises only independently named read tools', () => {
+    expect(TOOLS.map((tool) => tool.name)).toEqual([
+      'reminders_read',
+      'reminder_lists_read',
+      'reminder_subtasks_read',
+      'calendar_events_read',
+      'calendars_read',
+    ]);
+  });
 
-      const actionEnum = (
-        tool?.inputSchema.properties?.action as
-          | { enum?: readonly string[] }
-          | undefined
-      )?.enum;
-      expect(actionEnum).toEqual(actions);
-    });
-
-    it('should have correct dueWithin options enum', () => {
-      const remindersTool = TOOLS.find(
-        (tool) => tool.name === 'reminders_tasks',
+  it('marks every tool as read-only, idempotent, and closed-world', () => {
+    for (const tool of TOOLS) {
+      expect(tool.annotations).toEqual(
+        expect.objectContaining({
+          readOnlyHint: true,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: false,
+        }),
       );
-      const dueWithinEnum = (
-        remindersTool?.inputSchema.properties?.dueWithin as
-          | { enum?: readonly string[] }
-          | undefined
-      )?.enum;
-      expect(dueWithinEnum).toEqual([
-        'today',
-        'tomorrow',
-        'this-week',
-        'overdue',
-        'no-date',
-      ]);
-    });
+      expect(tool.inputSchema.type).toBe('object');
+      expect(tool.inputSchema.additionalProperties).toBe(false);
+      expect(tool.description).toContain('untrusted');
+    }
+  });
 
-    it('exposes the event-CLI-supported reminder and event fields', () => {
-      const remindersTool = TOOLS.find(
-        (tool) => tool.name === 'reminders_tasks',
-      );
-      const remindersProps = remindersTool?.inputSchema.properties ?? {};
+  it('does not expose action or mutation fields', () => {
+    const forbidden = [
+      'action',
+      'title',
+      'newTitle',
+      'name',
+      'newName',
+      'note',
+      'dueDate',
+      'list',
+      'targetCalendar',
+      'span',
+      'completed',
+    ];
 
-      // Reminder write fields still wired through `event reminders create|update`
-      // (`startDate` is shared with the read-window filter below).
-      expect(remindersProps).toHaveProperty('startDate');
-      expect(remindersProps).toHaveProperty('dueDate');
-      expect(remindersProps).toHaveProperty('priority');
-      expect(remindersProps).toHaveProperty('tags');
-      expect(remindersProps).toHaveProperty('subtasks');
-
-      // Reminder read filters: a due-date window is passed to the CLI.
-      expect(remindersProps).toHaveProperty('startDate');
-      expect(remindersProps).toHaveProperty('endDate');
-
-      const calendarEventsTool = TOOLS.find(
-        (tool) => tool.name === 'calendar_events',
-      );
-      const calendarProps = calendarEventsTool?.inputSchema.properties ?? {};
-
-      // Calendar write fields still wired through `event calendar create|update`
-      expect(calendarProps).toHaveProperty('location');
-      expect(calendarProps).toHaveProperty('note');
-      expect(calendarProps).toHaveProperty('targetCalendar');
-      expect(calendarProps).toHaveProperty('span');
-      // availability stays as a read-only TS-side filter.
-      expect(calendarProps).toHaveProperty('availability');
-    });
-
-    it('drops fields the `event` CLI cannot write', () => {
-      const remindersTool = TOOLS.find(
-        (tool) => tool.name === 'reminders_tasks',
-      );
-      const remindersProps = remindersTool?.inputSchema.properties ?? {};
-      for (const removed of [
-        'completionDate',
-        'location',
-        'alarms',
-        'clearAlarms',
-        'recurrence',
-        'recurrenceRules',
-        'clearRecurrence',
-        'locationTrigger',
-        'clearLocationTrigger',
-      ]) {
-        expect(remindersProps).not.toHaveProperty(removed);
+    for (const tool of TOOLS) {
+      const properties = tool.inputSchema.properties ?? {};
+      for (const property of forbidden) {
+        expect(properties).not.toHaveProperty(property);
       }
+    }
+  });
 
-      const calendarEventsTool = TOOLS.find(
-        (tool) => tool.name === 'calendar_events',
-      );
-      const calendarProps = calendarEventsTool?.inputSchema.properties ?? {};
-      for (const removed of [
-        'alarms',
-        'clearAlarms',
-        'recurrenceRules',
-        'clearRecurrence',
-        'structuredLocation',
-        'url',
-        'isAllDay',
-        'filterAccount',
-      ]) {
-        expect(calendarProps).not.toHaveProperty(removed);
-      }
+  it('retains the supported reminder due-date filters', () => {
+    const reminders = TOOLS.find((tool) => tool.name === 'reminders_read');
+    const dueWithin = reminders?.inputSchema.properties?.dueWithin as
+      | { enum?: readonly string[] }
+      | undefined;
 
-      const remindersListsTool = TOOLS.find(
-        (tool) => tool.name === 'reminders_lists',
-      );
-      const listProps = remindersListsTool?.inputSchema.properties ?? {};
-      expect(listProps).not.toHaveProperty('color');
-    });
-
-    it('should enforce tool name pattern compliance', () => {
-      const pattern = /^[a-zA-Z0-9_-]+$/;
-      const invalidTool = TOOLS.find((tool) => !pattern.test(tool.name));
-      expect(invalidTool).toBeUndefined();
-    });
-
-    it('should document default read date window behavior for calendar events', () => {
-      const calendarEventsTool = TOOLS.find(
-        (tool) => tool.name === 'calendar_events',
-      );
-      const startDateDescription = (
-        calendarEventsTool?.inputSchema.properties?.startDate as
-          | { description?: string }
-          | undefined
-      )?.description;
-      const endDateDescription = (
-        calendarEventsTool?.inputSchema.properties?.endDate as
-          | { description?: string }
-          | undefined
-      )?.description;
-
-      expect(startDateDescription).toContain('defaults to today');
-      expect(endDateDescription).toContain('defaults to today + 14 days');
-    });
-
-    it('should expose optional date range filters for calendar collections', () => {
-      const calendarsTool = TOOLS.find(
-        (tool) => tool.name === 'calendar_calendars',
-      );
-      const calendarProps = calendarsTool?.inputSchema.properties ?? {};
-
-      expect(calendarProps).toHaveProperty('startDate');
-      expect(calendarProps).toHaveProperty('endDate');
-      // `event` has no EventKit account info to filter by.
-      expect(calendarProps).not.toHaveProperty('filterAccount');
-    });
+    expect(dueWithin?.enum).toEqual([
+      'today',
+      'tomorrow',
+      'this-week',
+      'overdue',
+      'no-date',
+    ]);
   });
 });
