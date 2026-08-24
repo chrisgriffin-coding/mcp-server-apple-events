@@ -47,7 +47,7 @@ jobs:
         run: pnpm run build:ts
 
       - name: Test without EventKit access
-        run: pnpm test -- --runInBand
+        run: pnpm test --runInBand
 
       - name: Audit production dependencies
         run: pnpm audit --prod

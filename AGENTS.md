@@ -18,7 +18,7 @@ Install the locked graph without running lifecycle scripts:
 pnpm install --ignore-scripts --frozen-lockfile
 ```
 
-Run `pnpm exec tsc --noEmit --project tsconfig.json`, `pnpm exec biome check .`, `pnpm run build:ts`, `pnpm test -- --runInBand`, and `pnpm audit --prod` before commits. Tests must not invoke real EventKit or trigger macOS permission dialogs.
+Run `pnpm exec tsc --noEmit --project tsconfig.json`, `pnpm exec biome check .`, `pnpm run build:ts`, `pnpm test --runInBand`, and `pnpm audit --prod` before commits. Tests must not invoke real EventKit or trigger macOS permission dialogs.
 
 The native helper has full EventKit permission and contains write commands. Build it only as an explicit, reviewed step with `pnpm run build:event`; never restore a package `postinstall` hook. Review every submodule-pin change before building.
 
