@@ -917,38 +917,80 @@ describe('ValidationSchemas', () => {
           endDate: '2025-11-04T10:00:00+08:00',
           location: 'Office',
           note: 'agenda',
-          targetCalendar: 'Work',
+          calendarId: 'calendar-123',
+          confirmed: true,
         }) as Record<string, unknown>;
 
         expect(parsed.title).toBe('Aligned event');
         expect(parsed.startDate).toBe('2025-11-04T09:00:00+08:00');
         expect(parsed.location).toBe('Office');
-        expect(parsed.targetCalendar).toBe('Work');
+        expect(parsed.calendarId).toBe('calendar-123');
+        expect(parsed.confirmed).toBe(true);
       });
 
-      it('CreateCalendarEventSchema silently strips dropped fields (alarms, recurrence, structuredLocation, url, isAllDay, availability)', () => {
-        const parsed = CreateCalendarEventSchema.parse({
-          title: 'Trimmed',
+      it('CreateCalendarEventSchema rejects unadvertised and legacy target fields', () => {
+        expect(() =>
+          CreateCalendarEventSchema.parse({
+            title: 'Rejected',
+            startDate: '2025-11-04T09:00:00+08:00',
+            endDate: '2025-11-04T10:00:00+08:00',
+            calendarId: 'calendar-123',
+            confirmed: true,
+            targetCalendar: 'Work',
+          }),
+        ).toThrow();
+      });
+
+      it('CreateCalendarEventSchema requires exact user confirmation', () => {
+        const base = {
+          title: 'Approved event',
           startDate: '2025-11-04T09:00:00+08:00',
           endDate: '2025-11-04T10:00:00+08:00',
-          alarms: [{ relativeOffset: -1800 }],
-          recurrenceRules: [{ frequency: 'weekly', interval: 1 }],
-          structuredLocation: { title: 'Office', latitude: 1, longitude: 2 },
-          url: 'https://example.com',
-          isAllDay: true,
-          availability: 'busy',
-        }) as Record<string, unknown>;
+          calendarId: 'calendar-123',
+        };
+        expect(() => CreateCalendarEventSchema.parse(base)).toThrow();
+        expect(() =>
+          CreateCalendarEventSchema.parse({ ...base, confirmed: false }),
+        ).toThrow();
+      });
 
-        for (const field of [
-          'alarms',
-          'recurrenceRules',
-          'structuredLocation',
-          'url',
-          'isAllDay',
-          'availability',
-        ]) {
-          expect(parsed[field]).toBeUndefined();
-        }
+      it('CreateCalendarEventSchema accepts an inclusive same-day all-day event', () => {
+        expect(
+          CreateCalendarEventSchema.parse({
+            title: 'All day',
+            startDate: '2025-11-04',
+            endDate: '2025-11-04',
+            calendarId: 'calendar-123',
+            confirmed: true,
+          }),
+        ).toEqual(
+          expect.objectContaining({
+            startDate: '2025-11-04',
+            endDate: '2025-11-04',
+          }),
+        );
+      });
+
+      it('CreateCalendarEventSchema rejects mixed date modes and reversed ranges', () => {
+        const base = {
+          title: 'Bad range',
+          calendarId: 'calendar-123',
+          confirmed: true,
+        };
+        expect(() =>
+          CreateCalendarEventSchema.parse({
+            ...base,
+            startDate: '2025-11-04',
+            endDate: '2025-11-04T10:00:00Z',
+          }),
+        ).toThrow();
+        expect(() =>
+          CreateCalendarEventSchema.parse({
+            ...base,
+            startDate: '2025-11-04T10:00:00Z',
+            endDate: '2025-11-04T09:00:00Z',
+          }),
+        ).toThrow();
       });
 
       it('UpdateCalendarEventSchema drops span (event has no --span on update)', () => {

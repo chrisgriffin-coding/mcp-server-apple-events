@@ -38,7 +38,7 @@ describe('server handlers', () => {
     ]);
   });
 
-  it('returns the read-only tool definitions', async () => {
+  it('returns the configured tool definitions', async () => {
     registerHandlers(
       server as unknown as Parameters<typeof registerHandlers>[0],
     );

@@ -21,7 +21,7 @@ async function createClient(): Promise<Client> {
   return client;
 }
 
-describe('read-only MCP protocol surface', () => {
+describe('MCP protocol surface', () => {
   let client: Client;
 
   beforeAll(async () => {
@@ -42,7 +42,7 @@ describe('read-only MCP protocol surface', () => {
     expect(client.getServerCapabilities()).toEqual({ tools: {} });
   });
 
-  it('advertises exactly the read-only tools', async () => {
+  it('advertises exactly the approved read and create tools', async () => {
     const result = await client.listTools();
     expect(result.tools.map((tool) => tool.name)).toEqual([
       'reminders_read',
@@ -50,9 +50,12 @@ describe('read-only MCP protocol surface', () => {
       'reminder_subtasks_read',
       'calendar_events_read',
       'calendars_read',
+      'calendar_event_create',
     ]);
 
-    for (const tool of result.tools) {
+    for (const tool of result.tools.filter(
+      (tool) => tool.name !== 'calendar_event_create',
+    )) {
       expect(tool.annotations).toEqual(
         expect.objectContaining({
           readOnlyHint: true,
@@ -64,6 +67,21 @@ describe('read-only MCP protocol surface', () => {
       expect(tool.inputSchema.additionalProperties).toBe(false);
       expect(tool.inputSchema.properties).not.toHaveProperty('action');
     }
+
+    const create = result.tools.find(
+      (tool) => tool.name === 'calendar_event_create',
+    );
+    expect(create?.annotations).toEqual(
+      expect.objectContaining({
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false,
+      }),
+    );
+    expect(create?.inputSchema.additionalProperties).toBe(false);
+    expect(create?.inputSchema.properties).not.toHaveProperty('action');
+    expect(create?.inputSchema.properties).not.toHaveProperty('targetCalendar');
   });
 
   it('rejects an unknown tool without launching EventKit', async () => {

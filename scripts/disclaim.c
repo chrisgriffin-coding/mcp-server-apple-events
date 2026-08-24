@@ -1,5 +1,5 @@
 /*
- * disclaim.c — TCC responsibility shim for the read-only EventKit helper.
+ * disclaim.c — TCC responsibility shim for an EventKit helper.
  *
  * Usage: eventkit-read-helper-disclaim <binary> [args...]
  *
@@ -21,6 +21,10 @@
 
 extern char **environ;
 
+#ifndef DISCLAIMER_NAME
+#define DISCLAIMER_NAME "eventkit-helper-disclaim"
+#endif
+
 /*
  * Private libSystem API (macOS 10.14+), the same call Chromium uses to make
  * helper processes self-responsible for TCC. Declared weakly so the shim
@@ -34,14 +38,14 @@ extern int responsibility_spawnattrs_setdisclaim(posix_spawnattr_t *attrs,
 int main(int argc, char *argv[]) {
   if (argc < 2) {
     fprintf(stderr, "usage: %s <binary> [args...]\n",
-            argc > 0 ? argv[0] : "eventkit-read-helper-disclaim");
+            argc > 0 ? argv[0] : DISCLAIMER_NAME);
     return 64;
   }
 
   posix_spawnattr_t attr;
   int rc = posix_spawnattr_init(&attr);
   if (rc != 0) {
-    fprintf(stderr, "eventkit-read-helper-disclaim: posix_spawnattr_init: %s\n",
+    fprintf(stderr, "%s: posix_spawnattr_init: %s\n", DISCLAIMER_NAME,
             strerror(rc));
     return 127;
   }
@@ -50,7 +54,7 @@ int main(int argc, char *argv[]) {
     /* Without SETEXEC, posix_spawn would fork instead of exec-replacing
        this process — fail loudly rather than leave a confusing parent. */
     posix_spawnattr_destroy(&attr);
-    fprintf(stderr, "eventkit-read-helper-disclaim: posix_spawnattr_setflags: %s\n",
+    fprintf(stderr, "%s: posix_spawnattr_setflags: %s\n", DISCLAIMER_NAME,
             strerror(rc));
     return 127;
   }
@@ -63,7 +67,7 @@ int main(int argc, char *argv[]) {
   /* Reached only when the spawn itself failed — with SETEXEC a successful
      spawn never returns. */
   posix_spawnattr_destroy(&attr);
-  fprintf(stderr, "eventkit-read-helper-disclaim: failed to exec %s: %s\n", argv[1],
+  fprintf(stderr, "%s: failed to exec %s: %s\n", DISCLAIMER_NAME, argv[1],
           strerror(rc));
   return 127;
 }

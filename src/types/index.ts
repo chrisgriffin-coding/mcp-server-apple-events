@@ -148,6 +148,7 @@ export interface CalendarEvent {
   startDate: string;
   endDate: string;
   calendar: string;
+  calendarId?: string;
   notes?: string;
   location?: string;
   structuredLocation?: StructuredLocation;
@@ -186,10 +187,9 @@ export interface CalendarEvent {
 export interface Calendar {
   id: string;
   title: string;
-  // The native read helper does not return EventKit accounts, so
-  // `account` / `accountType` are dropped rather than kept as always-empty
-  // fields. `eventCount` is set only when the caller scoped the listing to a
-  // date range (see `findCalendars` in calendarRepository.ts).
+  color?: string;
+  allowsContentModifications: boolean;
+  isImmutable: boolean;
   eventCount?: number;
 }
 
@@ -338,7 +338,8 @@ export interface CalendarToolArgs extends BaseToolArgs {
   location?: string;
   timezone?: string;
   span?: 'this-event' | 'future-events'; // delete only
-  targetCalendar?: string; // create only
+  calendarId?: string; // create only
+  confirmed?: boolean; // create only; must be true after client-side approval
 }
 
 export interface CalendarsToolArgs extends BaseToolArgs {

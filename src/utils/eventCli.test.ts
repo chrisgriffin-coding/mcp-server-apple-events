@@ -16,6 +16,7 @@ import {
 import {
   CliPermissionError,
   clearEventBinaryPathCache,
+  executeCalendarCreateCliJson,
   executeEventCliJson,
   executeEventCliPlain,
 } from './eventCli.js';
@@ -88,6 +89,8 @@ describe('eventCli', () => {
     }));
     process.env.EVENTKIT_HELPER_SHA256 = 'a'.repeat(64);
     process.env.EVENTKIT_DISCLAIM_SHA256 = 'b'.repeat(64);
+    process.env.EVENTKIT_CREATE_HELPER_SHA256 = 'c'.repeat(64);
+    process.env.EVENTKIT_CREATE_DISCLAIM_SHA256 = 'd'.repeat(64);
     // Hermetic: a developer's shell-exported EVENTKIT_CLI_TIMEOUT_MS must
     // not change the expected default in assertions below.
     delete process.env.EVENTKIT_CLI_TIMEOUT_MS;
@@ -96,6 +99,8 @@ describe('eventCli', () => {
   afterEach(() => {
     delete process.env.EVENTKIT_HELPER_SHA256;
     delete process.env.EVENTKIT_DISCLAIM_SHA256;
+    delete process.env.EVENTKIT_CREATE_HELPER_SHA256;
+    delete process.env.EVENTKIT_CREATE_DISCLAIM_SHA256;
   });
 
   describe('executeEventCliJson — success', () => {
@@ -174,6 +179,83 @@ describe('eventCli', () => {
       ]);
 
       expect(result).toBe('Reminder deleted successfully');
+    });
+  });
+
+  describe('executeCalendarCreateCliJson', () => {
+    const createArgs = [
+      'calendar',
+      'create',
+      '--calendar-id',
+      'calendar-123',
+      '--title',
+      'Approved event',
+      '--start',
+      '2026-08-25 10:00',
+      '--end',
+      '2026-08-25 11:00',
+      '--json',
+    ];
+
+    it('uses the separately pinned create-only helper and shim', async () => {
+      respondWith({
+        stdout: JSON.stringify({
+          created: true,
+          id: 'event-123',
+          title: 'Approved event',
+          calendar: 'Work',
+          calendarId: 'calendar-123',
+          isAllDay: false,
+        }),
+      });
+
+      await executeCalendarCreateCliJson(createArgs);
+
+      expect(mockExecFile).toHaveBeenCalledWith(
+        '/test/project/bin/eventkit-calendar-create-helper-disclaim',
+        ['/test/project/bin/eventkit-calendar-create-helper', ...createArgs],
+        {
+          maxBuffer: 10 * 1024 * 1024,
+          timeout: 30_000,
+          killSignal: 'SIGKILL',
+        },
+        expect.any(Function),
+      );
+      expect(
+        (
+          mockFindSecureBinaryPath.mock.calls[0]?.[1] as {
+            expectedHash: string;
+          }
+        ).expectedHash,
+      ).toBe('c'.repeat(64));
+      expect(
+        (
+          mockFindSecureBinaryPath.mock.calls[1]?.[1] as {
+            expectedHash: string;
+          }
+        ).expectedHash,
+      ).toBe('d'.repeat(64));
+    });
+
+    it('fails closed when the create-helper hash is missing', async () => {
+      delete process.env.EVENTKIT_CREATE_HELPER_SHA256;
+
+      await expect(executeCalendarCreateCliJson(createArgs)).rejects.toThrow(
+        /EVENTKIT_CREATE_HELPER_SHA256 is required/,
+      );
+      expect(mockExecFile).not.toHaveBeenCalled();
+    });
+
+    it('warns that a timed-out create may have committed and must not be retried automatically', async () => {
+      const timeoutError = Object.assign(new Error('Command failed'), {
+        killed: true,
+        signal: 'SIGKILL',
+      }) as ExecFileException;
+      respondWith({ stdout: '', stderr: '', error: timeoutError });
+
+      const result = executeCalendarCreateCliJson(createArgs);
+      await expect(result).rejects.toThrow(/may already have been created/);
+      await expect(result).rejects.toThrow(/Do not retry automatically/);
     });
   });
 

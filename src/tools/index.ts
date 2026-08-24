@@ -16,6 +16,7 @@ import type {
 import { MESSAGES } from '../utils/constants.js';
 import { TOOLS } from './definitions.js';
 import {
+  handleCreateCalendarEvent,
   handleReadCalendarEvents,
   handleReadCalendars,
   handleReadReminderLists,
@@ -36,6 +37,11 @@ const TOOL_ROUTER_MAP = {
     handleReadCalendarEvents({ ...args, action: 'read' } as CalendarToolArgs),
   calendars_read: async (args) =>
     handleReadCalendars({ ...args, action: 'read' } as CalendarsToolArgs),
+  calendar_event_create: async (args) =>
+    handleCreateCalendarEvent({
+      ...args,
+      action: 'create',
+    } as CalendarToolArgs),
 } satisfies Record<string, ToolRouter>;
 
 type ToolName = keyof typeof TOOL_ROUTER_MAP;

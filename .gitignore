@@ -354,6 +354,10 @@ _.seed
 /bin/eventkit-read-helper-disclaim
 /bin/eventkit-read-helper.sha256
 /bin/eventkit-read-helper-disclaim.sha256
+/bin/eventkit-calendar-create-helper
+/bin/eventkit-calendar-create-helper-disclaim
+/bin/eventkit-calendar-create-helper.sha256
+/bin/eventkit-calendar-create-helper-disclaim.sha256
 
 # Native helper compiler output
 /.build/eventkit-read-helper/

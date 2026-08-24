@@ -79,8 +79,9 @@ describe('Server Module', () => {
           instructions: string;
         }
       ).instructions;
-      expect(instructions).toContain('read-only');
-      expect(instructions).toContain('No create, update, complete, or delete');
+      expect(instructions).toContain('calendar_event_create');
+      expect(instructions).toContain('non-idempotent');
+      expect(instructions).toContain('No update');
       expect(instructions).toContain('untrusted');
 
       expect(registerHandlers).toHaveBeenCalledWith(mockServerInstance);

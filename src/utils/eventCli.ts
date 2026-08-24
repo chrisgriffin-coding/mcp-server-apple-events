@@ -1,9 +1,9 @@
 /**
- * @fileoverview Read-only EventKit helper execution wrapper
+ * @fileoverview EventKit helper execution wrapper
  * @module utils/eventCli
- * @description Spawns this repository's purpose-built Swift helper and
- * translates its stdout / stderr / exit code into JSON or domain-specific
- * errors. The helper exposes read commands only.
+ * @description Spawns this repository's separately signed read-only and
+ * create-only Swift helpers, translating stdout / stderr / exit status into
+ * JSON or domain-specific errors.
  */
 
 import type { ExecFileException } from 'node:child_process';
@@ -204,7 +204,10 @@ function throwForStderr(stderr: string): never {
   // `eventkit-read-helper-disclaim: <detail>` (no "Error: " prefix).
   // as user-actionable errors — otherwise production error formatting
   // collapses them into a generic "System error occurred".
-  if (message.startsWith('eventkit-read-helper-disclaim:')) {
+  if (
+    message.startsWith('eventkit-read-helper-disclaim:') ||
+    message.startsWith('eventkit-calendar-create-helper-disclaim:')
+  ) {
     throw new CliUserError(message);
   }
   // Only structured "Error: ..." stderr is treated as a user-actionable
@@ -224,6 +227,7 @@ function throwForStderr(stderr: string): never {
 async function runEventCli(
   launch: ResolvedLaunch,
   args: string[],
+  mutationMayHaveCommitted = false,
 ): Promise<ExecResult> {
   const { result, error } = await execFilePromise(launch.disclaimPath, [
     launch.cliPath,
@@ -240,8 +244,11 @@ async function runEventCli(
       const stderrDetail = stderr
         ? ` (stderr before kill: ${stderr.trim()})`
         : '';
+      const mutationWarning = mutationMayHaveCommitted
+        ? ' The event may already have been created. Do not retry automatically; inspect the target calendar first to avoid a duplicate.'
+        : '';
       throw new CliUserError(
-        `event execution failed: timed out after ${result.timeoutMs} ms (killed)${stderrDetail}. ` +
+        `event execution failed: timed out after ${result.timeoutMs} ms (killed)${stderrDetail}.${mutationWarning} ` +
           'The CLI was stuck — possible causes: an EventKit permission prompt that cannot ' +
           'be displayed (headless/launchd context), a slow operation exceeding the timeout, ' +
           'or a stalled system. Grant access in System Settings > Privacy & Security if a ' +
@@ -316,6 +323,47 @@ printed by the build in your MCP client environment.`,
   return { cliPath, disclaimPath };
 }
 
+function resolveCreateLaunchOrThrow(): ResolvedLaunch {
+  const projectRoot = findProjectRoot();
+  const binaryName = FILE_SYSTEM.CALENDAR_CREATE_BINARY_NAME;
+  const canonicalPath = path.join(projectRoot, 'bin', binaryName);
+  const helperHash = requireSha256Environment(
+    'EVENTKIT_CREATE_HELPER_SHA256',
+    process.env.EVENTKIT_CREATE_HELPER_SHA256,
+  );
+  const { path: cliPath } = findSecureBinaryPath([canonicalPath], {
+    ...getEnvironmentBinaryConfig(),
+    expectedHash: helperHash,
+    allowedPaths: [canonicalPath],
+  });
+  if (!cliPath) {
+    throw new CliUserError(
+      `Create-only EventKit helper was not found or failed integrity/signature validation at ${canonicalPath}. Rebuild with \`pnpm run build:helper\` and update EVENTKIT_CREATE_HELPER_SHA256.`,
+    );
+  }
+
+  const disclaimCanonicalPath = path.join(
+    projectRoot,
+    'bin',
+    FILE_SYSTEM.CALENDAR_CREATE_DISCLAIM_BINARY_NAME,
+  );
+  const { path: disclaimPath } = findSecureBinaryPath([disclaimCanonicalPath], {
+    ...getEnvironmentBinaryConfig(),
+    expectedHash: requireSha256Environment(
+      'EVENTKIT_CREATE_DISCLAIM_SHA256',
+      process.env.EVENTKIT_CREATE_DISCLAIM_SHA256,
+    ),
+    maxFileSize: 1024 * 1024,
+    allowedPaths: [disclaimCanonicalPath],
+  });
+  if (!disclaimPath) {
+    throw new CliUserError(
+      `Create-helper responsibility shim was not found or failed integrity/signature validation at ${disclaimCanonicalPath}. Rebuild with \`pnpm run build:helper\` and update EVENTKIT_CREATE_DISCLAIM_SHA256.`,
+    );
+  }
+  return { cliPath, disclaimPath };
+}
+
 /**
  * Executes the read-only helper and parses its stdout as raw JSON.
  *
@@ -345,6 +393,24 @@ export async function executeEventCliJson<T>(args: string[]): Promise<T> {
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     throw new Error(`event execution failed: Invalid CLI output - ${detail}`);
+  }
+}
+
+/** Executes the separately signed create-only Calendar helper. */
+export async function executeCalendarCreateCliJson<T>(
+  args: string[],
+): Promise<T> {
+  const launch = resolveCreateLaunchOrThrow();
+  const { stdout } = await runEventCli(launch, args, true);
+  const normalized = bufferToString(stdout);
+  if (!normalized) {
+    throw new Error('event creation failed: Empty CLI output');
+  }
+  try {
+    return JSON.parse(normalized) as T;
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(`event creation failed: Invalid CLI output - ${detail}`);
   }
 }
 

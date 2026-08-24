@@ -2,7 +2,7 @@
   "name": "mcp-server-eventkit",
   "version": "0.1.0",
   "private": true,
-  "description": "Security-focused, read-only MCP server for Apple Reminders and Calendar via EventKit.",
+  "description": "Security-focused MCP server for Apple Calendar and Reminders via EventKit.",
   "author": "Chris Griffin",
   "contributors": [
     "Frad Lee <https://frad.me>"
@@ -27,10 +27,16 @@
     "bin/eventkit-read-helper-disclaim",
     "bin/eventkit-read-helper.sha256",
     "bin/eventkit-read-helper-disclaim.sha256",
+    "bin/eventkit-calendar-create-helper",
+    "bin/eventkit-calendar-create-helper-disclaim",
+    "bin/eventkit-calendar-create-helper.sha256",
+    "bin/eventkit-calendar-create-helper-disclaim.sha256",
     "dist/",
     "scripts/build-helper.mjs",
     "scripts/helper-Info.plist",
     "scripts/helper.entitlements",
+    "scripts/create-helper-Info.plist",
+    "scripts/create-helper.entitlements",
     "scripts/disclaim.c"
   ],
   "engines": {

@@ -19,12 +19,19 @@ export const FILE_SYSTEM = {
   /** Repository-owned, read-only EventKit helper filename. */
   SWIFT_BINARY_NAME: 'eventkit-read-helper',
 
+  /** Create-only EventKit helper filename. */
+  CALENDAR_CREATE_BINARY_NAME: 'eventkit-calendar-create-helper',
+
   /**
    * TCC disclaim shim filename — spawns `event` as its own TCC-responsible
    * process so EventKit permission prompts work from desktop MCP clients
    * that lack usage-description strings (issue #93).
    */
   DISCLAIM_BINARY_NAME: 'eventkit-read-helper-disclaim',
+
+  /** TCC responsibility shim for the create-only helper. */
+  CALENDAR_CREATE_DISCLAIM_BINARY_NAME:
+    'eventkit-calendar-create-helper-disclaim',
 } as const;
 
 /**

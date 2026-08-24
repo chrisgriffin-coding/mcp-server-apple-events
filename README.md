@@ -1,18 +1,18 @@
 # EventKit MCP Server
 
-A security-focused MCP server for reading Apple Calendar and Reminders data on macOS through EventKit.
+A security-focused MCP server for Apple Calendar and Reminders on macOS through EventKit.
 
-This repository began as a fork of [FradSer/mcp-server-apple-events](https://github.com/FradSer/mcp-server-apple-events). The first hardened release intentionally exposes only read operations while its permission, validation, and approval boundaries are established and tested.
+This repository began as a fork of [FradSer/mcp-server-apple-events](https://github.com/FradSer/mcp-server-apple-events). The hardened surface exposes five reads and one separately approved calendar-event creation operation.
 
 ## Current status
 
 - Local development only; not published to npm.
-- Read-only MCP surface for reminders, reminder lists, reminder checklist items, calendar events, and calendars.
-- No MCP prompts or write tools.
-- Native EventKit access is provided by the dependency-free Swift source in `native/EventKitReadHelper/`.
+- Read-only MCP tools for reminders, reminder lists, reminder checklist items, calendar events, and calendars.
+- One non-idempotent `calendar_event_create` tool; no update, completion, or deletion tools.
+- Native reads and creation use separate dependency-free Swift binaries in `native/`.
 - Calendar and Reminders content is explicitly classified as untrusted data.
 
-The native helper requests full EventKit access because Apple does not offer read-only Reminders authorization. Least privilege is enforced in code: the helper implements only reminder-list, reminder, and calendar-event reads and has no EventKit save/remove calls, network client, database, Shortcut integration, or background service. See [SECURITY.md](SECURITY.md) and [docs/security-model.md](docs/security-model.md) before enabling it.
+The read helper requests full EventKit access because Apple does not offer read-only Calendar or Reminders authorization. It contains no save/remove calls. The separate create helper also requires full Calendar access because selecting a specific calendar by stable EventKit ID is impossible under write-only authorization; its command surface contains one save path and no event listing, update, or deletion path. Neither helper has a network client, database, Shortcut integration, or background service. See [SECURITY.md](SECURITY.md) and [docs/security-model.md](docs/security-model.md) before enabling them.
 
 ## Requirements
 
@@ -41,9 +41,9 @@ pnpm run build:helper
 pnpm run build:ts
 ```
 
-The build requires a trusted Apple code-signing identity; ad-hoc signing is rejected. Record the exact helper and TCC-shim hashes it prints for the MCP configuration below.
+The build requires a trusted Apple code-signing identity; ad-hoc signing is rejected. Record all four exact helper and TCC-shim hashes it prints for the MCP configuration below.
 
-No read is attempted during installation or build. The first actual EventKit read may cause macOS to request Calendar or Reminders permission for `EventKit Read Helper`.
+No EventKit access is attempted during installation or build. The first read may request Calendar or Reminders permission for `EventKit Read Helper`; the first creation may separately request full Calendar permission for `EventKit Calendar Create Helper`.
 
 ## MCP tools
 
@@ -53,13 +53,16 @@ No read is attempted during installation or build. The first actual EventKit rea
 | `reminder_lists_read` | Read reminder-list metadata |
 | `reminder_subtasks_read` | Read checklist items encoded in a reminder note |
 | `calendar_events_read` | Read and filter events in a date range |
-| `calendars_read` | Read calendar names observed in a date range |
+| `calendars_read` | Read every calendar's stable ID, writable status, and optional date-range event count |
+| `calendar_event_create` | Create exactly one approved event in a writable calendar selected by stable ID |
 
-Every tool is annotated with `readOnlyHint: true`, `destructiveHint: false`, `idempotentHint: true`, and `openWorldHint: false`. Advertised schemas set `additionalProperties: false` and contain no action discriminator or mutation fields. Runtime read validation strips unrecognized fields, and the router overwrites any unadvertised `action` argument with `read` as defense in depth.
+The five read tools are annotated read-only and idempotent. `calendar_event_create` is marked `readOnlyHint: false`, `destructiveHint: false`, and `idempotentHint: false`. It requires `confirmed: true` after the client presents the exact event details and obtains user approval. Every schema sets `additionalProperties: false`; the strict runtime create schema rejects unadvertised fields, calendar names, and default-calendar fallbacks. The router overwrites any forged action with the operation implied by the independently named tool.
+
+Creation requires the exact `calendarId` returned by `calendars_read`. It fails if the ID is missing, read-only, or not event-capable. Bare `YYYY-MM-DD` inputs create all-day events and use an inclusive `endDate`; timed events require an end instant after the start. Creation is not automatically retried: if the native process times out after saving, its result explicitly says the outcome is unknown and Calendar must be inspected before retrying.
 
 ## Local MCP configuration
 
-After building, configure a local stdio MCP client with an absolute path and the two mandatory hashes shown above.
+After building, configure a local stdio MCP client with an absolute path and the four mandatory hashes shown above.
 
 ```json
 {
@@ -69,7 +72,9 @@ After building, configure a local stdio MCP client with an absolute path and the
       "args": ["/absolute/path/to/mcp-server-eventkit/dist/index.js"],
       "env": {
         "EVENTKIT_HELPER_SHA256": "<exact helper hash>",
-        "EVENTKIT_DISCLAIM_SHA256": "<exact shim hash>"
+        "EVENTKIT_DISCLAIM_SHA256": "<exact read shim hash>",
+        "EVENTKIT_CREATE_HELPER_SHA256": "<exact create-helper hash>",
+        "EVENTKIT_CREATE_DISCLAIM_SHA256": "<exact create shim hash>"
       }
     }
   }
@@ -78,11 +83,11 @@ After building, configure a local stdio MCP client with an absolute path and the
 
 Keep client approval enabled. Do not use an unreviewed npm or `npx` package in place of this local checkout.
 
-## Planned write support
+## Planned additional write support
 
 Writes will not be added to the read helper. Each mutation will use a separately named MCP tool and narrowly scoped native write helper so a client can distinguish and approve it:
 
-- create reminder or calendar event
+- create reminder
 - update reminder or calendar event
 - complete a reminder
 - delete reminder or calendar event

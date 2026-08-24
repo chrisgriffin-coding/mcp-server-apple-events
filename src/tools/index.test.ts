@@ -7,9 +7,11 @@ jest.mock('./handlers/index.js', () => ({
   handleReadSubtasks: jest.fn(),
   handleReadCalendarEvents: jest.fn(),
   handleReadCalendars: jest.fn(),
+  handleCreateCalendarEvent: jest.fn(),
 }));
 
 import {
+  handleCreateCalendarEvent,
   handleReadCalendarEvents,
   handleReadCalendars,
   handleReadReminderLists,
@@ -21,7 +23,7 @@ const success: CallToolResult = {
   content: [{ type: 'text', text: 'Success' }],
 };
 
-describe('read-only tool routing', () => {
+describe('tool routing', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
@@ -57,6 +59,26 @@ describe('read-only tool routing', () => {
       handleToolCall('reminder_lists_read', { action: 'delete' }),
     ).resolves.toEqual(success);
     expect(mockedHandler).toHaveBeenCalledWith();
+  });
+
+  it('routes calendar creation with a server-forced create action', async () => {
+    const mockedHandler = handleCreateCalendarEvent as jest.MockedFunction<
+      typeof handleCreateCalendarEvent
+    >;
+    mockedHandler.mockResolvedValue(success);
+    const args = {
+      action: 'delete',
+      title: 'Approved event',
+      startDate: '2026-08-25 10:00',
+      endDate: '2026-08-25 11:00',
+      calendarId: 'calendar-123',
+      confirmed: true,
+    };
+
+    await expect(
+      handleToolCall('calendar_event_create', args),
+    ).resolves.toEqual(success);
+    expect(mockedHandler).toHaveBeenCalledWith({ ...args, action: 'create' });
   });
 
   it.each([

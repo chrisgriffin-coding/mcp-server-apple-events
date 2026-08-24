@@ -542,20 +542,66 @@ const TimeZoneSchema = z
   .max(128, 'Timezone cannot exceed 128 characters')
   .optional();
 
-export const CreateCalendarEventSchema = z.object({
-  title: SafeTextSchema,
-  startDate: createRequiredDateSchema('Start date'),
-  endDate: createRequiredDateSchema('End date'),
-  note: SafeNoteSchema,
-  location: createSafeTextSchema(
-    0,
-    VALIDATION.MAX_LOCATION_LENGTH,
-    'Location',
-    true,
-  ),
-  targetCalendar: SafeListNameSchema,
-  timezone: TimeZoneSchema,
-});
+const CalendarIdSchema = z
+  .string()
+  .min(1, 'Calendar ID is required')
+  .max(512, 'Calendar ID cannot exceed 512 characters')
+  .regex(/^\S+$/u, 'Calendar ID cannot contain whitespace');
+const CalendarEventTitleSchema = SafeTextSchema.regex(
+  /^[^\n\r\t]+$/u,
+  'Event title cannot contain line breaks or tabs',
+);
+const CalendarEventLocationSchema = createSafeTextSchema(
+  0,
+  VALIDATION.MAX_LOCATION_LENGTH,
+  'Location',
+  true,
+).refine(
+  (value) => value === undefined || !/[\n\r\t]/u.test(value),
+  'Location cannot contain line breaks or tabs',
+);
+
+export const CreateCalendarEventSchema = z
+  .object({
+    title: CalendarEventTitleSchema,
+    startDate: createRequiredDateSchema('Start date'),
+    endDate: createRequiredDateSchema('End date'),
+    calendarId: CalendarIdSchema,
+    note: SafeNoteSchema,
+    location: CalendarEventLocationSchema,
+    confirmed: z.literal(true, {
+      errorMap: () => ({
+        message:
+          'confirmed must be true after the user approves the exact event details',
+      }),
+    }),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    const startIsDateOnly = /^\d{4}-\d{2}-\d{2}$/.test(value.startDate);
+    const endIsDateOnly = /^\d{4}-\d{2}-\d{2}$/.test(value.endDate);
+    if (startIsDateOnly !== endIsDateOnly) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['endDate'],
+        message:
+          'startDate and endDate must both be dates or both be date-times',
+      });
+      return;
+    }
+    const start = parseReminderDueDate(value.startDate)?.getTime();
+    const end = parseReminderDueDate(value.endDate)?.getTime();
+    if (start === undefined || end === undefined) return;
+    if (startIsDateOnly ? end < start : end <= start) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['endDate'],
+        message: startIsDateOnly
+          ? 'All-day endDate must be on or after startDate'
+          : 'Timed event endDate must be after startDate',
+      });
+    }
+  });
 
 export const ReadCalendarEventsSchema = z.object({
   id: SafeIdSchema.optional(),

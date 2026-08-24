@@ -337,6 +337,21 @@ private final class EventKitReader {
       .map(eventJSON)
   }
 
+  func calendars() async throws -> [[String: Any]] {
+    try await ensureAccess(to: .event)
+    return eventStore.calendars(for: .event)
+      .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+      .map { calendar in
+        [
+          "id": calendar.calendarIdentifier,
+          "title": calendar.title,
+          "color": jsonValue(colorHex(for: calendar)),
+          "allowsContentModifications": calendar.allowsContentModifications,
+          "isImmutable": calendar.isImmutable,
+        ]
+      }
+  }
+
   private enum Entity {
     case reminder
     case event
@@ -464,6 +479,7 @@ private final class EventKitReader {
     return [
       "id": identifier, "externalId": jsonValue(event.calendarItemExternalIdentifier),
       "title": event.title ?? "", "calendar": event.calendar?.title ?? "Unknown",
+      "calendarId": jsonValue(event.calendar?.calendarIdentifier),
       "startDate": startDate, "endDate": endDate, "isAllDay": event.isAllDay,
       "location": jsonValue(event.location),
       "structuredLocation": jsonValue(structuredLocation), "notes": jsonValue(event.notes),
@@ -488,6 +504,7 @@ private let helpText = """
   USAGE:
     eventkit-read-helper reminders list [--list <name>] [--completed] [--start <YYYY-MM-DD> --end <YYYY-MM-DD>] --json
     eventkit-read-helper reminders lists list --json
+    eventkit-read-helper calendar calendars list --json
     eventkit-read-helper calendar list --start <YYYY-MM-DD> --end <YYYY-MM-DD> [--calendar <name>] --json
 
   This helper intentionally implements no create, update, complete, delete, sync,
@@ -550,6 +567,13 @@ private struct EventKitReadHelper {
           startDate: startDate, endDate: endDate
         )
       )
+      return
+    }
+    if arguments.starts(with: ["calendar", "calendars", "list"]) {
+      _ = try ParsedOptions.parse(
+        arguments.dropFirst(3), valueOptions: [], flagOptions: ["--json"]
+      )
+      try writeJSON(await reader.calendars())
       return
     }
     if arguments.starts(with: ["calendar", "list"]) {
