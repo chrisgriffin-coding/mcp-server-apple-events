@@ -790,7 +790,7 @@ describe('Tool Handlers', () => {
 
   describe('handleReadCalendars', () => {
     it('should return calendars formatted as Markdown', async () => {
-      // The vendored `event` CLI has no EventKit calendar identifiers, so
+      // The native read helper has no EventKit calendar identifiers, so
       // calendars synthesized from the read window have `id === title` and
       // the `(ID: …)` suffix is omitted.
       const mockCalendars = [

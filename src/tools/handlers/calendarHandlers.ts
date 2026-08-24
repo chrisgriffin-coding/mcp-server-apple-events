@@ -185,7 +185,7 @@ export const handleReadCalendars = async (
       'Calendars',
       calendars,
       (calendar) => {
-        // The vendored `event` CLI doesn't expose EventKit calendar
+        // The native read helper doesn't expose EventKit calendar
         // identifiers, so calendars synthesized from the read window have
         // `id === title`. Skip the trailing `(ID: …)` then since it just
         // duplicates the title.

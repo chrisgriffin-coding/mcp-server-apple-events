@@ -16,15 +16,15 @@ export const FILE_SYSTEM = {
   /** Package name used to distinguish this repository from an ancestor. */
   PROJECT_PACKAGE_NAME: 'mcp-server-eventkit',
 
-  /** Swift binary filename — points at the vendored `event` CLI (FradSer/event). */
-  SWIFT_BINARY_NAME: 'event',
+  /** Repository-owned, read-only EventKit helper filename. */
+  SWIFT_BINARY_NAME: 'eventkit-read-helper',
 
   /**
    * TCC disclaim shim filename — spawns `event` as its own TCC-responsible
    * process so EventKit permission prompts work from desktop MCP clients
    * that lack usage-description strings (issue #93).
    */
-  DISCLAIM_BINARY_NAME: 'event-disclaim',
+  DISCLAIM_BINARY_NAME: 'eventkit-read-helper-disclaim',
 } as const;
 
 /**

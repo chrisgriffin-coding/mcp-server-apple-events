@@ -1,10 +1,10 @@
 /*
- * disclaim.c — TCC responsibility disclaim shim (issue #93).
+ * disclaim.c — TCC responsibility shim for the read-only EventKit helper.
  *
- * Usage: event-disclaim <binary> [args...]
+ * Usage: eventkit-read-helper-disclaim <binary> [args...]
  *
  * Re-execs <binary> via posix_spawn with POSIX_SPAWN_SETEXEC and TCC
- * responsibility disclaimed, making <binary> its own TCC-responsible
+ * responsibility disclaimed, making the helper its own TCC-responsible
  * process. macOS then reads the EventKit usage strings from <binary>'s
  * embedded Info.plist and can show the Reminders/Calendar permission
  * prompt even when the process tree was started by a GUI MCP client
@@ -34,14 +34,14 @@ extern int responsibility_spawnattrs_setdisclaim(posix_spawnattr_t *attrs,
 int main(int argc, char *argv[]) {
   if (argc < 2) {
     fprintf(stderr, "usage: %s <binary> [args...]\n",
-            argc > 0 ? argv[0] : "event-disclaim");
+            argc > 0 ? argv[0] : "eventkit-read-helper-disclaim");
     return 64;
   }
 
   posix_spawnattr_t attr;
   int rc = posix_spawnattr_init(&attr);
   if (rc != 0) {
-    fprintf(stderr, "event-disclaim: posix_spawnattr_init: %s\n",
+    fprintf(stderr, "eventkit-read-helper-disclaim: posix_spawnattr_init: %s\n",
             strerror(rc));
     return 127;
   }
@@ -50,7 +50,7 @@ int main(int argc, char *argv[]) {
     /* Without SETEXEC, posix_spawn would fork instead of exec-replacing
        this process — fail loudly rather than leave a confusing parent. */
     posix_spawnattr_destroy(&attr);
-    fprintf(stderr, "event-disclaim: posix_spawnattr_setflags: %s\n",
+    fprintf(stderr, "eventkit-read-helper-disclaim: posix_spawnattr_setflags: %s\n",
             strerror(rc));
     return 127;
   }
@@ -63,7 +63,7 @@ int main(int argc, char *argv[]) {
   /* Reached only when the spawn itself failed — with SETEXEC a successful
      spawn never returns. */
   posix_spawnattr_destroy(&attr);
-  fprintf(stderr, "event-disclaim: failed to exec %s: %s\n", argv[1],
+  fprintf(stderr, "eventkit-read-helper-disclaim: failed to exec %s: %s\n", argv[1],
           strerror(rc));
   return 127;
 }

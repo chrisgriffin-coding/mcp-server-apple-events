@@ -1,10 +1,9 @@
 /**
  * reminderRepository.ts
- * Repository for reminder data access via the vendored `event` CLI.
+ * Repository for reminder data access via the read-only EventKit helper.
  *
- * Tags and subtasks are TS-managed in the notes field (`[#tag]` and
- * `---SUBTASKS---` blocks); the `event --tags` / `--parentTitle` flags are
- * not used so the AdvancedReminderEdit Shortcut is not required.
+ * Tags and subtasks are interpreted from the notes field (`[#tag]` and
+ * `---SUBTASKS---` blocks); the native helper never invokes Shortcuts.
  */
 
 import type { Reminder, ReminderList } from '../types/index.js';

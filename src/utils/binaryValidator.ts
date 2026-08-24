@@ -3,6 +3,7 @@
  * Secure binary path validation and integrity checking
  */
 
+import { execFileSync } from 'node:child_process';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -15,6 +16,8 @@ interface BinarySecurityConfig {
   maxFileSize: number;
   allowedPaths: string[];
   requireAbsolutePath: boolean;
+  rejectSymbolicLinks: boolean;
+  requireValidCodeSignature: boolean;
 }
 
 /**
@@ -31,8 +34,15 @@ interface BinarySecurityConfig {
  */
 const DEFAULT_CONFIG: BinarySecurityConfig = {
   maxFileSize: 50 * 1024 * 1024, // 50MB max
-  allowedPaths: ['dist/swift/bin', 'src/swift/bin', 'swift/bin', 'bin/event'],
+  allowedPaths: [
+    'dist/swift/bin',
+    'src/swift/bin',
+    'swift/bin',
+    'bin/eventkit-read-helper',
+  ],
   requireAbsolutePath: true,
+  rejectSymbolicLinks: false,
+  requireValidCodeSignature: false,
 };
 
 /**
@@ -77,7 +87,7 @@ export function validateBinaryPath(
   }
 
   // An entry matches when it is a suffix of either the full binary path
-  // (including its filename, e.g. `bin/event`) or the binary's parent
+  // (including its filename, e.g. `bin/eventkit-read-helper`) or the parent
   // directory. Suffix matching is segment-aligned — `endsWith('/bin')` after
   // stripping trailing separators avoids the `foo-bin` partial-match trap
   // while still working for absolute and relative allowed paths.
@@ -110,6 +120,16 @@ export function validateBinaryPath(
     );
   }
 
+  if (
+    fullConfig.rejectSymbolicLinks &&
+    fs.lstatSync(normalizedPath).isSymbolicLink()
+  ) {
+    throw new BinaryValidationError(
+      'Binary path must not be a symbolic link',
+      'SYMLINK_NOT_ALLOWED',
+    );
+  }
+
   const stats = fs.statSync(normalizedPath);
   if (!stats.isFile()) {
     throw new BinaryValidationError(
@@ -132,6 +152,20 @@ export function validateBinaryPath(
       'Binary file is not executable',
       'NOT_EXECUTABLE',
     );
+  }
+}
+
+/** Verifies the embedded Mach-O signature using the macOS system verifier. */
+export function validateCodeSignature(binaryPath: string): boolean {
+  try {
+    execFileSync(
+      '/usr/bin/codesign',
+      ['--verify', '--strict', '--verbose=2', binaryPath],
+      { stdio: 'ignore' },
+    );
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -193,6 +227,12 @@ export function validateBinarySecurity(
         errors.push('Binary integrity check failed - hash mismatch');
       }
     }
+    if (
+      config.requireValidCodeSignature &&
+      !validateCodeSignature(binaryPath)
+    ) {
+      errors.push('Binary code-signature verification failed');
+    }
   } catch (error) {
     if (error instanceof BinaryValidationError) {
       errors.push(`${error.code}: ${error.message}`);
@@ -238,23 +278,24 @@ export function getEnvironmentBinaryConfig(): Partial<BinarySecurityConfig> {
     return {
       requireAbsolutePath: false,
       maxFileSize: 100 * 1024 * 1024, // 100MB for test
+      rejectSymbolicLinks: true,
     };
   }
 
   if (process.env.NODE_ENV === 'development') {
     // Development mode - log more details
     return {
-      maxFileSize: 100 * 1024 * 1024, // 100MB for dev
+      maxFileSize: 10 * 1024 * 1024,
+      rejectSymbolicLinks: true,
+      requireValidCodeSignature: true,
     };
   }
 
   // Production mode - strict validation
   return {
-    expectedHash: process.env.SWIFT_BINARY_HASH,
-    // The universal bin/event sits at ~51.7MB today; 80MB matches the
-    // published-tarball size-sanity bound and leaves room for vendor bumps
-    // without surfacing as a misleading "binary not found" error.
-    maxFileSize: 80 * 1024 * 1024, // 80MB
+    maxFileSize: 10 * 1024 * 1024,
     requireAbsolutePath: true,
+    rejectSymbolicLinks: true,
+    requireValidCodeSignature: true,
   };
 }

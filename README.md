@@ -9,10 +9,10 @@ This repository began as a fork of [FradSer/mcp-server-apple-events](https://git
 - Local development only; not published to npm.
 - Read-only MCP surface for reminders, reminder lists, reminder checklist items, calendar events, and calendars.
 - No MCP prompts or write tools.
-- Native EventKit access is provided by the pinned `vendor/event` Swift submodule.
+- Native EventKit access is provided by the dependency-free Swift source in `native/EventKitReadHelper/`.
 - Calendar and Reminders content is explicitly classified as untrusted data.
 
-The native helper currently requests full EventKit access because Apple does not offer read-only Reminders authorization and the upstream helper uses full Calendar authorization. The MCP server does not advertise or route any mutation, but the helper itself contains write commands. See [SECURITY.md](SECURITY.md) and [docs/security-model.md](docs/security-model.md) before enabling it.
+The native helper requests full EventKit access because Apple does not offer read-only Reminders authorization. Least privilege is enforced in code: the helper implements only reminder-list, reminder, and calendar-event reads and has no EventKit save/remove calls, network client, database, Shortcut integration, or background service. See [SECURITY.md](SECURITY.md) and [docs/security-model.md](docs/security-model.md) before enabling it.
 
 ## Requirements
 
@@ -23,10 +23,10 @@ The native helper currently requests full EventKit access because Apple does not
 
 ## Local development
 
-Clone with the pinned native submodule, then install without executing package lifecycle scripts during the first review:
+Clone, then install without executing package lifecycle scripts during the first review:
 
 ```bash
-git clone --recurse-submodules <our-repository-url>
+git clone <our-repository-url>
 cd mcp-server-eventkit
 pnpm install --ignore-scripts --frozen-lockfile
 pnpm exec tsc --noEmit --project tsconfig.json
@@ -34,14 +34,16 @@ pnpm test
 pnpm exec biome check .
 ```
 
-Build the native helper only after reviewing the pinned submodule commit:
+Build the native helper after reviewing the repository-owned Swift source:
 
 ```bash
-pnpm run build:event
+pnpm run build:helper
 pnpm run build:ts
 ```
 
-No read will be attempted during installation or build. The first actual EventKit read may cause macOS to request Calendar or Reminders permission for the native `event` helper.
+The build requires a trusted Apple code-signing identity; ad-hoc signing is rejected. Record the exact helper and TCC-shim hashes it prints for the MCP configuration below.
+
+No read is attempted during installation or build. The first actual EventKit read may cause macOS to request Calendar or Reminders permission for `EventKit Read Helper`.
 
 ## MCP tools
 
@@ -57,14 +59,18 @@ Every tool is annotated with `readOnlyHint: true`, `destructiveHint: false`, `id
 
 ## Local MCP configuration
 
-After building, configure a local stdio MCP client with an absolute path:
+After building, configure a local stdio MCP client with an absolute path and the two mandatory hashes shown above.
 
 ```json
 {
   "mcpServers": {
     "eventkit": {
       "command": "node",
-      "args": ["/absolute/path/to/mcp-server-eventkit/dist/index.js"]
+      "args": ["/absolute/path/to/mcp-server-eventkit/dist/index.js"],
+      "env": {
+        "EVENTKIT_HELPER_SHA256": "<exact helper hash>",
+        "EVENTKIT_DISCLAIM_SHA256": "<exact shim hash>"
+      }
     }
   }
 }
@@ -74,7 +80,7 @@ Keep client approval enabled. Do not use an unreviewed npm or `npx` package in p
 
 ## Planned write support
 
-Writes will not be re-enabled through the upstream mixed-action tools. Each mutation will be a separate MCP tool so a client can distinguish and approve it:
+Writes will not be added to the read helper. Each mutation will use a separately named MCP tool and narrowly scoped native write helper so a client can distinguish and approve it:
 
 - create reminder or calendar event
 - update reminder or calendar event

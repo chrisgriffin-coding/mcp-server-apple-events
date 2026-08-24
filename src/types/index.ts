@@ -186,7 +186,7 @@ export interface CalendarEvent {
 export interface Calendar {
   id: string;
   title: string;
-  // The vendored `event` CLI has no concept of EventKit accounts, so
+  // The native read helper does not return EventKit accounts, so
   // `account` / `accountType` are dropped rather than kept as always-empty
   // fields. `eventCount` is set only when the caller scoped the listing to a
   // date range (see `findCalendars` in calendarRepository.ts).

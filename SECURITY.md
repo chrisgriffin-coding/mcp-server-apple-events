@@ -13,16 +13,16 @@ Do not open a public issue containing Calendar, Reminders, filesystem, account, 
 - Run only from a reviewed local checkout.
 - Keep MCP client approval enabled.
 - Do not expose the stdio process through a network bridge.
-- Review changes to `vendor/event`, lifecycle scripts, and the lockfile before installing.
+- Review changes to `native/EventKitReadHelper`, native build scripts, lifecycle scripts, and the lockfile before installing.
 - Install dependencies with `--ignore-scripts` during review.
 - Treat Calendar and Reminders fields as attacker-controlled content.
 - Grant macOS permissions only on a trusted personal workstation.
 
 ## Known limitations
 
-1. The native `event` helper requests full Calendar and Reminders access. The MCP layer is read-only, but the helper binary contains mutation commands and is therefore a high-trust component.
+1. The native helper requests full Calendar and Reminders access because EventKit does not offer read-only Reminders authorization. The helper contains only read commands, but any native parser or EventKit vulnerability remains high impact.
 2. macOS permissions are granted to the helper binary rather than per MCP tool or per calling conversation.
 3. Reminder checklist items are encoded in notes rather than represented by an EventKit subtask API.
-4. The project has not yet undergone independent security review, notarized release verification, or live EventKit integration testing.
+4. The project has not yet undergone independent security review or notarized release verification. Local signed builds have undergone disposable-data live EventKit testing.
 
 See [docs/security-model.md](docs/security-model.md) for the threat model and release gates.

@@ -18,7 +18,9 @@ TypeScript MCP server
         |
         | argv array, no shell
         v
-Pinned native event helper
+Repository-owned read-only EventKit helper
+  - no third-party Swift dependencies
+  - no mutation, network, database, Shortcut, or daemon code
         |
         | full EventKit permission
         v
@@ -35,22 +37,20 @@ Calendar event fields, reminder fields, URLs, attendee data, list names, notes, 
 - The router places `action: 'read'` after caller arguments so it cannot be overridden.
 - Tool-name dispatch checks own properties, preventing prototype-chain names such as `toString` from becoming routes.
 - The native process is launched with `execFile` and an argv array, not through a shell.
-- The helper path is constrained to the repository's `bin/event` and can be hash-pinned with `SWIFT_BINARY_HASH`.
+- The helper and TCC shim paths are constrained to exact repository `bin/` paths, reject symbolic links, require valid code signatures, and require separate exact SHA-256 environment pins.
 - Native calls have a finite timeout and output-size cap.
 - Runtime dependencies are exact-version pinned in both the manifest and lockfile.
 - The project is private and is not published to npm during hardening.
 
 ## Residual risks
 
-### Full native permission
+### Full native read permission
 
-The most important residual risk is that the Swift helper has full EventKit permission and contains write subcommands. A vulnerability in the helper, path validation, its build chain, or a future router change could cross the read-only boundary.
-
-Longer term, the safer architecture is a purpose-built native read helper with no mutation command implementations. Apple does not provide read-only Reminders authorization, so least privilege must also be enforced in our code and release design.
+Apple does not provide read-only Reminders authorization, so the helper receives full EventKit authorization even though it implements no save/remove operations. A vulnerability in EventKit, the helper parser/mapping code, its build chain, or a future native change could still cross the intended boundary. Native source changes therefore require explicit review.
 
 ### Supply chain
 
-The repository includes npm dependencies, package lifecycle scripts, C code for a launch shim, Swift source as a git submodule, and release/notarization scripts. A lockfile alone does not make these components trustworthy. Review every pinned update and avoid automatic dependency update merging.
+The repository includes npm dependencies, C code for a launch shim, repository-owned Swift source, and native signing logic. A lockfile and runtime hashes do not make those components inherently trustworthy. Review native source/build changes and avoid automatic dependency update merging.
 
 ### Local data disclosure
 
@@ -71,7 +71,7 @@ Before any write tool is advertised:
 5. Add tests for forged actions, ambiguous titles, duplicate items, recurrence scope, timeout-after-commit, and retry behavior.
 6. Test against disposable local calendars and reminder lists, never production data.
 7. Require client-side approval for every mutation during the initial release.
-8. Complete a native-helper code review and decide whether to replace it with a narrower helper.
+8. Keep write support out of the read helper; use a separate narrowly scoped native mutation helper.
 
 ## Out of scope for the initial milestone
 

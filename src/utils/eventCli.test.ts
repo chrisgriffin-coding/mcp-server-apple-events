@@ -83,14 +83,19 @@ describe('eventCli', () => {
     clearEventBinaryPathCache();
     mockFindProjectRoot.mockReturnValue('/test/project');
     mockGetEnvironmentBinaryConfig.mockReturnValue({});
-    // Default: the `event` binary resolves, the optional disclaim shim does
-    // not — exercising the direct-spawn fallback most tests assert on.
-    mockFindSecureBinaryPath.mockImplementation((paths: string[]) =>
-      paths[0]?.endsWith('/bin/event') ? { path: paths[0] } : { path: null },
-    );
+    mockFindSecureBinaryPath.mockImplementation((paths: string[]) => ({
+      path: paths[0] ?? null,
+    }));
+    process.env.EVENTKIT_HELPER_SHA256 = 'a'.repeat(64);
+    process.env.EVENTKIT_DISCLAIM_SHA256 = 'b'.repeat(64);
     // Hermetic: a developer's shell-exported EVENTKIT_CLI_TIMEOUT_MS must
     // not change the expected default in assertions below.
     delete process.env.EVENTKIT_CLI_TIMEOUT_MS;
+  });
+
+  afterEach(() => {
+    delete process.env.EVENTKIT_HELPER_SHA256;
+    delete process.env.EVENTKIT_DISCLAIM_SHA256;
   });
 
   describe('executeEventCliJson — success', () => {
@@ -109,8 +114,13 @@ describe('eventCli', () => {
         { id: 'abc', title: 'Hello', isCompleted: false },
       ]);
       expect(mockExecFile).toHaveBeenCalledWith(
-        '/test/project/bin/event',
-        ['reminders', 'list', '--json'],
+        '/test/project/bin/eventkit-read-helper-disclaim',
+        [
+          '/test/project/bin/eventkit-read-helper',
+          'reminders',
+          'list',
+          '--json',
+        ],
         {
           maxBuffer: 10 * 1024 * 1024,
           timeout: 30_000,
@@ -301,7 +311,7 @@ describe('eventCli', () => {
 
       await expect(
         executeEventCliJson(['reminders', 'list', '--json']),
-      ).rejects.toThrow(/event.*binary not found/i);
+      ).rejects.toThrow(/helper.*failed integrity\/signature validation/i);
     });
 
     it('mentions the explicit build path in the not-found message', async () => {
@@ -312,15 +322,21 @@ describe('eventCli', () => {
       ).rejects.toThrow(/pnpm.*build/);
     });
 
-    it('uses findProjectRoot to compute the canonical bin/event path', async () => {
+    it('uses findProjectRoot to compute the canonical helper paths', async () => {
       mockFindProjectRoot.mockReturnValue('/custom/project');
       respondWith({ stdout: JSON.stringify({ ok: true }) });
 
       await executeEventCliJson(['reminders', 'lists', 'list', '--json']);
 
       expect(mockExecFile).toHaveBeenCalledWith(
-        '/custom/project/bin/event',
-        ['reminders', 'lists', 'list', '--json'],
+        '/custom/project/bin/eventkit-read-helper-disclaim',
+        [
+          '/custom/project/bin/eventkit-read-helper',
+          'reminders',
+          'lists',
+          'list',
+          '--json',
+        ],
         {
           maxBuffer: 10 * 1024 * 1024,
           timeout: 30_000,
@@ -364,8 +380,13 @@ describe('eventCli', () => {
       await executeEventCliJson(['reminders', 'list', '--json']);
 
       expect(mockExecFile).toHaveBeenCalledWith(
-        '/test/project/bin/event',
-        ['reminders', 'list', '--json'],
+        '/test/project/bin/eventkit-read-helper-disclaim',
+        [
+          '/test/project/bin/eventkit-read-helper',
+          'reminders',
+          'list',
+          '--json',
+        ],
         { maxBuffer: 10 * 1024 * 1024, timeout: 30_000, killSignal: 'SIGKILL' },
         expect.any(Function),
       );
@@ -504,9 +525,9 @@ describe('eventCli', () => {
   });
 
   describe('TCC disclaim shim routing (issue #93)', () => {
-    // Given the build produced bin/event-disclaim next to bin/event,
-    // when any event command runs, then it is spawned through the shim so
-    // the TCC permission prompt is attributed to `event` itself instead of
+    // Given the build produced the helper and its responsibility shim,
+    // when a read command runs, then it is spawned through the shim so
+    // the TCC permission prompt is attributed to the helper itself instead of
     // the desktop MCP client that launched the server.
     const resolveBoth = () => {
       mockFindSecureBinaryPath.mockImplementation((paths: string[]) => ({
@@ -514,15 +535,20 @@ describe('eventCli', () => {
       }));
     };
 
-    it('spawns event through bin/event-disclaim when the shim is present', async () => {
+    it('spawns the helper through the mandatory responsibility shim', async () => {
       resolveBoth();
       respondWith({ stdout: JSON.stringify({ ok: true }) });
 
       await executeEventCliJson(['reminders', 'list', '--json']);
 
       expect(mockExecFile).toHaveBeenCalledWith(
-        '/test/project/bin/event-disclaim',
-        ['/test/project/bin/event', 'reminders', 'list', '--json'],
+        '/test/project/bin/eventkit-read-helper-disclaim',
+        [
+          '/test/project/bin/eventkit-read-helper',
+          'reminders',
+          'list',
+          '--json',
+        ],
         {
           maxBuffer: 10 * 1024 * 1024,
           timeout: 30_000,
@@ -545,8 +571,14 @@ describe('eventCli', () => {
 
       expect(result).toBe('Reminder deleted successfully');
       expect(mockExecFile).toHaveBeenCalledWith(
-        '/test/project/bin/event-disclaim',
-        ['/test/project/bin/event', 'reminders', 'delete', '--id', 'abc'],
+        '/test/project/bin/eventkit-read-helper-disclaim',
+        [
+          '/test/project/bin/eventkit-read-helper',
+          'reminders',
+          'delete',
+          '--id',
+          'abc',
+        ],
         {
           maxBuffer: 10 * 1024 * 1024,
           timeout: 30_000,
@@ -556,31 +588,18 @@ describe('eventCli', () => {
       );
     });
 
-    it('falls back to direct spawn when the shim is absent', async () => {
-      // Default beforeEach mock resolves only bin/event.
-      respondWith({ stdout: JSON.stringify({ ok: true }) });
+    it('fails closed when the mandatory shim is absent', async () => {
+      mockFindSecureBinaryPath
+        .mockReturnValueOnce({ path: '/test/project/bin/eventkit-read-helper' })
+        .mockReturnValueOnce({ path: null });
 
-      await executeEventCliJson(['reminders', 'list', '--json']);
-
-      expect(mockExecFile).toHaveBeenCalledWith(
-        '/test/project/bin/event',
-        ['reminders', 'list', '--json'],
-        {
-          maxBuffer: 10 * 1024 * 1024,
-          timeout: 30_000,
-          killSignal: 'SIGKILL',
-        },
-        expect.any(Function),
-      );
+      await expect(
+        executeEventCliJson(['reminders', 'list', '--json']),
+      ).rejects.toThrow(/responsibility shim.*failed integrity/i);
+      expect(mockExecFile).not.toHaveBeenCalled();
     });
 
-    it('does not apply the SWIFT_BINARY_HASH pin (meant for event) to the shim', async () => {
-      // If the event hash pin leaked into the shim's validation config, the
-      // shim could never validate on strict-mode installs and the server
-      // would silently fall back to host-attributed spawning.
-      mockGetEnvironmentBinaryConfig.mockReturnValue({
-        expectedHash: 'pin-for-bin-event',
-      });
+    it('applies distinct mandatory hashes to helper and shim validation', async () => {
       mockFindSecureBinaryPath.mockImplementation((paths: string[]) => ({
         path: paths[0] ?? null,
       }));
@@ -589,12 +608,19 @@ describe('eventCli', () => {
       await executeEventCliJson(['reminders', 'list', '--json']);
 
       const shimCall = mockFindSecureBinaryPath.mock.calls.find((call) =>
-        (call[0] as string[])[0]?.endsWith('event-disclaim'),
+        (call[0] as string[])[0]?.endsWith('eventkit-read-helper-disclaim'),
       );
       expect(shimCall).toBeDefined();
+      expect((shimCall?.[1] as { expectedHash?: string }).expectedHash).toBe(
+        'b'.repeat(64),
+      );
       expect(
-        (shimCall?.[1] as { expectedHash?: string }).expectedHash,
-      ).toBeUndefined();
+        (
+          mockFindSecureBinaryPath.mock.calls[0]?.[1] as {
+            expectedHash?: string;
+          }
+        ).expectedHash,
+      ).toBe('a'.repeat(64));
     });
 
     it('surfaces shim spawn failures verbatim as user-actionable errors', async () => {
@@ -605,41 +631,24 @@ describe('eventCli', () => {
       respondWith({
         stdout: '',
         stderr:
-          'event-disclaim: failed to exec /test/project/bin/event: No such file or directory\n',
+          'eventkit-read-helper-disclaim: failed to exec /test/project/bin/eventkit-read-helper: No such file or directory\n',
         error,
       });
 
       const promise = executeEventCliJson(['reminders', 'list', '--json']);
 
       await expect(promise).rejects.toThrow(
-        'event-disclaim: failed to exec /test/project/bin/event',
+        'eventkit-read-helper-disclaim: failed to exec /test/project/bin/eventkit-read-helper',
       );
       await expect(promise).rejects.toMatchObject({ name: 'CliUserError' });
     });
 
-    it('warns on stderr once when the shim is unavailable', async () => {
-      const consoleError = jest
-        .spyOn(console, 'error')
-        .mockImplementation(() => {});
-      const originalNodeEnv = process.env.NODE_ENV;
-      // The warning is suppressed under NODE_ENV=test to keep suite output
-      // clean; emulate a production resolve to observe it.
-      process.env.NODE_ENV = 'production';
-      try {
-        // Default beforeEach mock resolves only bin/event.
-        respondWith({ stdout: JSON.stringify({ ok: true }) });
-
-        await executeEventCliJson(['reminders', 'list', '--json']);
-        await executeEventCliJson(['reminders', 'list', '--json']);
-
-        const shimWarnings = consoleError.mock.calls.filter((call) =>
-          String(call[0]).includes('event-disclaim shim not found'),
-        );
-        expect(shimWarnings).toHaveLength(1);
-      } finally {
-        process.env.NODE_ENV = originalNodeEnv;
-        consoleError.mockRestore();
-      }
+    it('rejects a missing helper hash before attempting binary resolution', async () => {
+      delete process.env.EVENTKIT_HELPER_SHA256;
+      await expect(
+        executeEventCliJson(['reminders', 'list', '--json']),
+      ).rejects.toThrow(/EVENTKIT_HELPER_SHA256 is required/);
+      expect(mockFindSecureBinaryPath).not.toHaveBeenCalled();
     });
 
     it('maps permission errors identically when spawned through the shim', async () => {

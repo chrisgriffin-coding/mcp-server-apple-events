@@ -1,11 +1,10 @@
 /**
  * calendarRepository.ts
- * Repository for calendar event data access via the vendored `event` CLI.
+ * Repository for calendar event data access via the read-only EventKit helper.
  *
  * Read-only fields (URL, structured location, all-day toggle, availability,
  * alarms, recurrence rules) are passed through from JSON when present;
- * write paths only cover what `event` exposes today. See
- * `docs/migration-to-event-cli.md` for the full table.
+ * fields are passed through from JSON when present.
  */
 
 import type { Calendar, CalendarEvent } from '../types/index.js';
@@ -27,10 +26,10 @@ const DEFAULT_READ_WINDOW_DAYS = 14;
  * When looking up a single event by ID, expand the read window aggressively
  * so events scheduled years away (e.g. recurring annual reservations) can
  * still be located without requiring the caller to know the date in advance.
- * EventKit only supports a maximum 4-year predicate window — bound at
- * roughly that to stay within Apple's limits.
+ * EventKit supports a maximum four-year predicate span, so search two years
+ * in each direction rather than accidentally constructing an eight-year span.
  */
-const FIND_BY_ID_WINDOW_DAYS = 365 * 4;
+const FIND_BY_ID_WINDOW_DAYS = 365 * 2;
 
 const resolveReadDateRange = (filters: {
   startDate?: string;
@@ -163,7 +162,7 @@ class CalendarRepository implements ICalendarRepository {
     );
     let normalized = events.map(mapEvent);
 
-    // `event` does not surface `--search`; apply the substring match in TS
+    // The helper does not surface `--search`; apply the substring match in TS
     // against title / notes / location.
     if (filters.search) {
       const needle = filters.search.toLowerCase();
@@ -185,7 +184,7 @@ class CalendarRepository implements ICalendarRepository {
   }
 
   /**
-   * `event` has no first-class "list calendars" command — calendar names are
+   * The helper has no first-class "list calendars" command — calendar names are
    * surfaced only as the `calendar` field on each event in `calendar list`.
    * Derive a unique-by-name listing from a wide read window so callers of
    * `calendars_read` see every calendar that contains an event. Calendars with

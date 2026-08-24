@@ -23,12 +23,14 @@
     "mcp-server-eventkit": "./dist/index.js"
   },
   "files": [
-    "bin/event",
-    "bin/event-disclaim",
+    "bin/eventkit-read-helper",
+    "bin/eventkit-read-helper-disclaim",
+    "bin/eventkit-read-helper.sha256",
+    "bin/eventkit-read-helper-disclaim.sha256",
     "dist/",
-    "scripts/build-event.mjs",
-    "scripts/event-Info.plist",
-    "scripts/event.entitlements",
+    "scripts/build-helper.mjs",
+    "scripts/helper-Info.plist",
+    "scripts/helper.entitlements",
     "scripts/disclaim.c"
   ],
   "engines": {
@@ -37,8 +39,8 @@
   "scripts": {
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "build:ts": "tsc -p tsconfig.build.json",
-    "build:event": "node scripts/build-event.mjs",
-    "build": "pnpm run clean && pnpm run build:ts && pnpm run build:event",
+    "build:helper": "node scripts/build-helper.mjs",
+    "build": "pnpm run clean && pnpm run build:ts && pnpm run build:helper",
     "test": "NODE_NO_WARNINGS=1 jest",
     "test:ci": "NODE_NO_WARNINGS=1 jest --coverage",
     "lint": "pnpm exec biome check . && pnpm exec tsc --noEmit --project tsconfig.json",

@@ -1,6 +1,6 @@
 /**
  * calendarRepository.test.ts
- * Tests for the calendar repository against the vendored `event` CLI.
+ * Tests for the calendar repository against the read-only EventKit helper.
  *
  * Scenarios are organized by the shapes the repository exposes:
  *   - read by id   → list a wide ±4-year window, then array `.find`
@@ -41,7 +41,7 @@ const eventFixture = (overrides: Partial<EventJSON> = {}): EventJSON =>
     ...overrides,
   }) as EventJSON;
 
-describe('CalendarRepository (event CLI backend)', () => {
+describe('CalendarRepository (read-only EventKit helper backend)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
