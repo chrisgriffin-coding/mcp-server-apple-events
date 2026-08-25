@@ -38,4 +38,17 @@ describe('Codex plugin packaging', () => {
       },
     });
   });
+
+  it('uses a self-contained integrity-pinned plugin bundle', () => {
+    const launcher = readFileSync(
+      path.join(process.cwd(), 'scripts/launch-codex-plugin.mjs'),
+      'utf8',
+    );
+
+    expect(launcher).toContain("server: 'plugin-dist/index.mjs'");
+    expect(launcher).toContain("serverHash: 'plugin-dist/index.mjs.sha256'");
+    expect(launcher).toContain(
+      'verifyHash(requiredFiles.server, requiredFiles.serverHash)',
+    );
+  });
 });

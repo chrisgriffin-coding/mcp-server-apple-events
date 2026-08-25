@@ -7,7 +7,7 @@
   },
   "files": {
     "ignoreUnknown": true,
-    "includes": ["**", "!vendor"]
+    "includes": ["**", "!vendor", "!plugin-dist"]
   },
   "formatter": {
     "enabled": true,

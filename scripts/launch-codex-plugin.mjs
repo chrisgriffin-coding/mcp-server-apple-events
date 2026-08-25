@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { spawn } from 'node:child_process';
+import crypto from 'node:crypto';
 import { readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,10 +12,8 @@ const pluginRoot = path.resolve(
 );
 
 const requiredFiles = {
-  server: 'dist/index.js',
-  mcpSdk: 'node_modules/@modelcontextprotocol/sdk/package.json',
-  exitOnEpipe: 'node_modules/exit-on-epipe/package.json',
-  zod: 'node_modules/zod/package.json',
+  server: 'plugin-dist/index.mjs',
+  serverHash: 'plugin-dist/index.mjs.sha256',
   readHelper: 'bin/eventkit-read-helper',
   readHelperHash: 'bin/eventkit-read-helper.sha256',
   readShim: 'bin/eventkit-read-helper-disclaim',
@@ -49,6 +48,17 @@ function readHash(relativePath) {
   return value;
 }
 
+function verifyHash(filePath, hashPath) {
+  const expected = readHash(hashPath);
+  const actual = crypto
+    .createHash('sha256')
+    .update(readFileSync(absolute(filePath)))
+    .digest('hex');
+  if (actual !== expected) {
+    throw new Error(`Integrity check failed for ${filePath}`);
+  }
+}
+
 function fail(error) {
   const detail = error instanceof Error ? error.message : String(error);
   process.stderr.write(
@@ -66,6 +76,7 @@ try {
   for (const relativePath of Object.values(requiredFiles)) {
     requireRegularFile(relativePath);
   }
+  verifyHash(requiredFiles.server, requiredFiles.serverHash);
 
   const child = spawn(process.execPath, [absolute(requiredFiles.server)], {
     cwd: pluginRoot,

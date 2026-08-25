@@ -30,6 +30,7 @@ git clone <our-repository-url>
 cd mcp-server-eventkit
 pnpm install --ignore-scripts --frozen-lockfile
 pnpm exec tsc --noEmit --project tsconfig.json
+pnpm run build:ts
 pnpm test
 pnpm exec biome check .
 ```
@@ -38,7 +39,6 @@ Build the native helper after reviewing the repository-owned Swift source:
 
 ```bash
 pnpm run build:helper
-pnpm run build:ts
 ```
 
 The build requires a trusted Apple code-signing identity; ad-hoc signing is rejected. Record all four exact helper and TCC-shim hashes it prints for the MCP configuration below.
@@ -98,9 +98,10 @@ git clone git@github.com:chrisgriffin-coding/mcp-server-apple-events.git ~/plugi
 cd ~/plugins/apple-eventkit
 pnpm install --ignore-scripts --frozen-lockfile
 pnpm exec tsc --noEmit --project tsconfig.json
+pnpm run build:ts
 pnpm test --runInBand
 pnpm exec biome check .
-pnpm run build:ts
+pnpm run build:plugin
 ```
 
 Review both Swift helpers and the signing identity, then explicitly build the
@@ -114,9 +115,10 @@ node scripts/launch-codex-plugin.mjs
 The last command starts the stdio server and waits for MCP input; press
 Control-C after confirming that it starts without an integrity or signature
 error. Add `apple-eventkit` to a trusted local Codex marketplace only after
-these checks. Rebuild and reinstall the plugin whenever its server, launcher,
-dependencies, or native helpers change so the installed snapshot stays in
-sync.
+these checks. The plugin bundle is self-contained because Codex deliberately
+excludes `node_modules` from installed plugin snapshots. Rebuild and reinstall
+the plugin whenever its server, launcher, dependencies, or native helpers
+change so the installed snapshot stays in sync.
 
 ## Planned additional write support
 

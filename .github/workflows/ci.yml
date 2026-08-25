@@ -46,6 +46,11 @@ jobs:
       - name: Build TypeScript only
         run: pnpm run build:ts
 
+      - name: Verify tracked Codex plugin bundle
+        run: |
+          pnpm run build:plugin
+          git diff --exit-code -- plugin-dist
+
       - name: Test without EventKit access
         run: pnpm test --runInBand
 
