@@ -1,6 +1,6 @@
 {
   "name": "apple-eventkit",
-  "version": "0.1.0",
+  "version": "0.1.0+codex.20260825151730",
   "description": "Local, security-focused Apple Calendar and Reminders access through EventKit.",
   "author": {
     "name": "Chris Griffin",
