@@ -350,12 +350,17 @@ _.seed
 # Compiled Swift binaries
 /bin/event
 /bin/event-disclaim
+/bin/eventkit-read-helper
+/bin/eventkit-read-helper-disclaim
+/bin/eventkit-read-helper.sha256
+/bin/eventkit-read-helper-disclaim.sha256
+/bin/eventkit-calendar-create-helper
+/bin/eventkit-calendar-create-helper-disclaim
+/bin/eventkit-calendar-create-helper.sha256
+/bin/eventkit-calendar-create-helper-disclaim.sha256
 
-# vendored event package build output
-/vendor/event/.build/
-/vendor/event/.build-arm64/
-/vendor/event/.build-x86_64/
-/vendor/event/.swiftpm/
+# Native helper compiler output
+/.build/eventkit-read-helper/
 
 # yarn v2
 

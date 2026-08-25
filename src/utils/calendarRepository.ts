@@ -1,15 +1,17 @@
 /**
  * calendarRepository.ts
- * Repository for calendar event data access via the vendored `event` CLI.
+ * Repository for calendar event reads via the read-only helper and creation
+ * via the separate create-only EventKit helper.
  *
  * Read-only fields (URL, structured location, all-day toggle, availability,
  * alarms, recurrence rules) are passed through from JSON when present;
- * write paths only cover what `event` exposes today. See
- * `docs/migration-to-event-cli.md` for the full table.
+ * fields are passed through from JSON when present.
  */
 
 import type { Calendar, CalendarEvent } from '../types/index.js';
 import type {
+  CalendarJSON,
+  CreatedEventJSON,
   CreateEventData,
   EventJSON,
   ICalendarRepository,
@@ -17,7 +19,11 @@ import type {
 } from '../types/repository.js';
 import { formatDateOnly, shiftDays, toDateOnly } from './dateUtils.js';
 import { CliUserError } from './errorHandling.js';
-import { executeEventCliJson, executeEventCliPlain } from './eventCli.js';
+import {
+  executeCalendarCreateCliJson,
+  executeEventCliJson,
+  executeEventCliPlain,
+} from './eventCli.js';
 import { addOptionalArg, nullToUndefined } from './helpers.js';
 import { parseReminderDueDate } from './reminderDateParser.js';
 
@@ -27,10 +33,10 @@ const DEFAULT_READ_WINDOW_DAYS = 14;
  * When looking up a single event by ID, expand the read window aggressively
  * so events scheduled years away (e.g. recurring annual reservations) can
  * still be located without requiring the caller to know the date in advance.
- * EventKit only supports a maximum 4-year predicate window — bound at
- * roughly that to stay within Apple's limits.
+ * EventKit supports a maximum four-year predicate span, so search two years
+ * in each direction rather than accidentally constructing an eight-year span.
  */
-const FIND_BY_ID_WINDOW_DAYS = 365 * 4;
+const FIND_BY_ID_WINDOW_DAYS = 365 * 2;
 
 const resolveReadDateRange = (filters: {
   startDate?: string;
@@ -77,6 +83,7 @@ const resolveReadDateRange = (filters: {
 };
 
 const EVENT_NULLABLE_FIELDS: (keyof EventJSON)[] = [
+  'calendarId',
   'notes',
   'location',
   'structuredLocation',
@@ -163,7 +170,7 @@ class CalendarRepository implements ICalendarRepository {
     );
     let normalized = events.map(mapEvent);
 
-    // `event` does not surface `--search`; apply the substring match in TS
+    // The helper does not surface `--search`; apply the substring match in TS
     // against title / notes / location.
     if (filters.search) {
       const needle = filters.search.toLowerCase();
@@ -184,31 +191,26 @@ class CalendarRepository implements ICalendarRepository {
     return normalized;
   }
 
-  /**
-   * `event` has no first-class "list calendars" command — calendar names are
-   * surfaced only as the `calendar` field on each event in `calendar list`.
-   * Derive a unique-by-name listing from a wide read window so callers of
-   * `calendar_calendars` see every calendar that contains an event. Calendars
-   * with zero events in the window won't appear; see
-   * `docs/migration-to-event-cli.md` for the workaround.
-   */
   async findAllCalendars(): Promise<Calendar[]> {
-    const events = await this.listEventsWideWindow();
-    const distinct = new Set<string>();
-    for (const event of events) {
-      if (event.calendar) distinct.add(event.calendar);
-    }
-    return Array.from(distinct)
-      .sort((a, b) => a.localeCompare(b))
-      .map((name) => ({ id: name, title: name }));
+    const calendars = await executeEventCliJson<CalendarJSON[]>([
+      'calendar',
+      'calendars',
+      'list',
+      '--json',
+    ]);
+    return calendars.map((calendar) => ({
+      id: calendar.id,
+      title: calendar.title,
+      color: calendar.color ?? undefined,
+      allowsContentModifications: calendar.allowsContentModifications,
+      isImmutable: calendar.isImmutable,
+    }));
   }
 
   /**
    * When a date range is supplied, scope the listing to that window instead
    * of the default wide window and annotate each calendar with how many
-   * events it contributed — this is the only per-calendar signal `event`
-   * exposes (it has no EventKit account/identifier info to filter or key
-   * on), so counts are grouped by calendar title rather than a stable id.
+   * events it contributed. Counts are grouped by stable EventKit calendar ID.
    */
   async findCalendars(
     filters: { startDate?: string; endDate?: string } = {},
@@ -226,25 +228,23 @@ class CalendarRepository implements ICalendarRepository {
       dateRange.endDate,
     );
 
-    const eventCountByTitle = new Map<string, number>();
+    const calendars = await this.findAllCalendars();
+    const eventCountById = new Map<string, number>();
     for (const event of events) {
-      if (!event.calendar) continue;
-      eventCountByTitle.set(
-        event.calendar,
-        (eventCountByTitle.get(event.calendar) ?? 0) + 1,
+      if (!event.calendarId) continue;
+      eventCountById.set(
+        event.calendarId,
+        (eventCountById.get(event.calendarId) ?? 0) + 1,
       );
     }
 
-    return Array.from(eventCountByTitle.keys())
-      .sort((a, b) => a.localeCompare(b))
-      .map((title) => ({
-        id: title,
-        title,
-        eventCount: eventCountByTitle.get(title) ?? 0,
-      }));
+    return calendars.map((calendar) => ({
+      ...calendar,
+      eventCount: eventCountById.get(calendar.id) ?? 0,
+    }));
   }
 
-  async createEvent(data: CreateEventData): Promise<EventJSON> {
+  async createEvent(data: CreateEventData): Promise<CreatedEventJSON> {
     const args = [
       'calendar',
       'create',
@@ -254,13 +254,13 @@ class CalendarRepository implements ICalendarRepository {
       data.startDate,
       '--end',
       data.endDate,
+      '--calendar-id',
+      data.calendarId,
     ];
-    addOptionalArg(args, '--calendar', data.calendar);
     addOptionalArg(args, '--notes', data.notes);
     addOptionalArg(args, '--location', data.location);
-    addOptionalArg(args, '--timezone', data.timeZone);
     args.push('--json');
-    return executeEventCliJson<EventJSON>(args);
+    return executeCalendarCreateCliJson<CreatedEventJSON>(args);
   }
 
   async updateEvent(data: UpdateEventData): Promise<EventJSON> {

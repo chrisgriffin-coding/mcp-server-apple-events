@@ -96,10 +96,19 @@ export interface ListJSON {
   color?: string | null;
 }
 
+export interface CalendarJSON {
+  id: string;
+  title: string;
+  color?: string | null;
+  allowsContentModifications: boolean;
+  isImmutable: boolean;
+}
+
 export interface EventJSON {
   id: string;
   title: string;
   calendar: string;
+  calendarId?: string | null;
   startDate: string;
   endDate: string;
   notes: string | null;
@@ -156,10 +165,18 @@ export interface CreateEventData {
   title: string;
   startDate: string;
   endDate: string;
-  calendar?: string;
+  calendarId: string;
   notes?: string;
   location?: string;
-  timeZone?: string;
+}
+
+export interface CreatedEventJSON {
+  created: true;
+  id: string | null;
+  title: string;
+  calendar: string;
+  calendarId: string;
+  isAllDay: boolean;
 }
 
 /** Fields accepted by `event calendar update`. */
@@ -222,7 +239,7 @@ export interface ICalendarRepository {
     startDate?: string;
     endDate?: string;
   }): Promise<Calendar[]>;
-  createEvent(data: CreateEventData): Promise<EventJSON>;
+  createEvent(data: CreateEventData): Promise<CreatedEventJSON>;
   updateEvent(data: UpdateEventData): Promise<EventJSON>;
   deleteEvent(id: string, span?: 'this-event' | 'future-events'): Promise<void>;
 }

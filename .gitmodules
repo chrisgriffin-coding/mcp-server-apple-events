@@ -1,3 +1,0 @@
-[submodule "vendor/event"]
-	path = vendor/event
-	url = https://github.com/FradSer/event.git

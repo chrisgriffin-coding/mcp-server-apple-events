@@ -38,6 +38,7 @@ const formatEventMarkdown = (event: CalendarEvent): string[] => {
   const lines: string[] = [];
   lines.push(`- ${event.title}`);
   if (event.calendar) lines.push(`  - Calendar: ${event.calendar}`);
+  if (event.calendarId) lines.push(`  - Calendar ID: ${event.calendarId}`);
   if (event.id) lines.push(`  - ID: ${event.id}`);
   if (event.startDate) lines.push(`  - Start: ${event.startDate}`);
   if (event.endDate) lines.push(`  - End: ${event.endDate}`);
@@ -87,12 +88,21 @@ export const handleCreateCalendarEvent = async (
       title: validatedArgs.title,
       startDate: validatedArgs.startDate,
       endDate: validatedArgs.endDate,
-      calendar: validatedArgs.targetCalendar,
+      calendarId: validatedArgs.calendarId,
       notes: validatedArgs.note,
       location: validatedArgs.location,
-      timeZone: validatedArgs.timezone,
     });
-    return formatSuccessMessage('created', 'event', event.title, event.id);
+    const lines = [
+      'Successfully created exactly one calendar event.',
+      `- Title (JSON): ${JSON.stringify(event.title)}`,
+      `- Target calendar (JSON): ${JSON.stringify(event.calendar)}`,
+      `- Target calendar ID: ${event.calendarId}`,
+      `- Start: ${validatedArgs.startDate}`,
+      `- End: ${validatedArgs.endDate}`,
+      `- All day: ${event.isAllDay}`,
+    ];
+    if (event.id) lines.push(`- Event ID: ${event.id}`);
+    return lines.join('\n');
   }, 'create calendar event');
 };
 
@@ -185,19 +195,17 @@ export const handleReadCalendars = async (
       'Calendars',
       calendars,
       (calendar) => {
-        // The vendored `event` CLI doesn't expose EventKit calendar
-        // identifiers, so calendars synthesized from the read window have
-        // `id === title`. Skip the trailing `(ID: …)` then since it just
-        // duplicates the title.
-        const idSuffix =
-          calendar.id && calendar.id !== calendar.title
-            ? ` (ID: ${calendar.id})`
-            : '';
         const countSuffix =
           calendar.eventCount !== undefined
             ? ` - ${calendar.eventCount} event${calendar.eventCount === 1 ? '' : 's'}`
             : '';
-        return [`- ${calendar.title}${idSuffix}${countSuffix}`];
+        return [
+          `- ${calendar.title}${countSuffix}`,
+          `  - ID: ${calendar.id}`,
+          `  - Writable: ${calendar.allowsContentModifications}`,
+          `  - Immutable: ${calendar.isImmutable}`,
+          ...(calendar.color ? [`  - Color: ${calendar.color}`] : []),
+        ];
       },
       'No calendars found.',
     );

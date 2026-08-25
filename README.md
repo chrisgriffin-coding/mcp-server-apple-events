@@ -1,278 +1,99 @@
-# Apple Events MCP Server ![Version 1.5.0](https://img.shields.io/badge/version-1.5.0-blue) ![License: MIT](https://img.shields.io/badge/license-MIT-green)
+# EventKit MCP Server
 
-[![X Follow](https://img.shields.io/twitter/follow/FradSer?style=social)](https://x.com/FradSer)
+A security-focused MCP server for Apple Calendar and Reminders on macOS through EventKit.
 
-English | [简体中文](README.zh-CN.md)
+This repository began as a fork of [FradSer/mcp-server-apple-events](https://github.com/FradSer/mcp-server-apple-events). The hardened surface exposes five reads and one separately approved calendar-event creation operation.
 
-A Model Context Protocol (MCP) server providing native integration with Apple Reminders and Calendar on macOS via the EventKit framework. Exposes reminders, lists, subtasks, and calendar events through a standardized interface with full CRUD operations.
+## Current status
 
-The EventKit backend is the standalone [`event`](https://github.com/FradSer/event) Swift CLI, vendored as a git submodule and built into `bin/event` during `pnpm install` — no separate `brew install` required. See [docs/migration-to-event-cli.md](docs/migration-to-event-cli.md) for the v1.5.0 backend swap and the list of write fields not yet exposed by `event`.
+- Local development only; not published to npm.
+- Read-only MCP tools for reminders, reminder lists, reminder checklist items, calendar events, and calendars.
+- One non-idempotent `calendar_event_create` tool; no update, completion, or deletion tools.
+- Native reads and creation use separate dependency-free Swift binaries in `native/`.
+- Calendar and Reminders content is explicitly classified as untrusted data.
 
-## Table of Contents
+The read helper requests full EventKit access because Apple does not offer read-only Calendar or Reminders authorization. It contains no save/remove calls. The separate create helper also requires full Calendar access because selecting a specific calendar by stable EventKit ID is impossible under write-only authorization; its command surface contains one save path and no event listing, update, or deletion path. Neither helper has a network client, database, Shortcut integration, or background service. See [SECURITY.md](SECURITY.md) and [docs/security-model.md](docs/security-model.md) before enabling them.
 
-- [Features](#features)
-- [Prerequisites](#prerequisites)
-- [Quick Start](#quick-start)
-- [Configuration](#configuration)
-- [macOS Permissions](#macos-permissions)
-- [Usage Examples](#usage-examples)
-- [Available MCP Tools](#available-mcp-tools)
-- [Structured Prompt Library](#structured-prompt-library)
-- [Development](#development)
-- [License](#license)
-- [Contributing](#contributing)
+## Requirements
 
-## Features
+- macOS 14 or later
+- Node.js 20 or later
+- pnpm 10.28.2
+- Xcode Command Line Tools or a compatible Xcode/Swift toolchain
 
-- Full CRUD for reminders, subtasks, reminder lists, and calendar events
-- Priority (high/medium/low/none), tags, and checklist subtasks with progress tracking
-- Multi-criteria filtering: completion, due-date range, priority, tags, full-text search, recurring, location-based
-- Flexible date formats (`YYYY-MM-DD`, `YYYY-MM-DD HH:mm:ss`, ISO 8601) with timezone awareness
-- Native macOS integration via EventKit — values configured in Reminders.app / Calendar.app round-trip through read responses
-- Automatic macOS permission discovery and prompting
-- Full Unicode support with comprehensive input validation
+## Local development
 
-## Prerequisites
-
-- **Node.js 20 or later**
-- **macOS** (required for EventKit)
-- **Xcode Command Line Tools** (only when building from source)
-- **pnpm** (recommended)
-
-The published npm package ships a pre-built, universal, code-signed `bin/event` binary, so `npx` users need neither Xcode nor a Swift toolchain. Building from a git clone requires the items above.
-
-## Quick Start
+Clone, then install without executing package lifecycle scripts during the first review:
 
 ```bash
-npx mcp-server-apple-events
+git clone <our-repository-url>
+cd mcp-server-eventkit
+pnpm install --ignore-scripts --frozen-lockfile
+pnpm exec tsc --noEmit --project tsconfig.json
+pnpm test
+pnpm exec biome check .
 ```
 
-## Configuration
+Build the native helper after reviewing the repository-owned Swift source:
 
-Add the server to your MCP client. The `npx` form works for every client below; for a local build, replace `command`/`args` with `node` pointing at `dist/index.js`.
+```bash
+pnpm run build:helper
+pnpm run build:ts
+```
 
-### Cursor
+The build requires a trusted Apple code-signing identity; ad-hoc signing is rejected. Record all four exact helper and TCC-shim hashes it prints for the MCP configuration below.
 
-Settings → MCP → Add new global MCP server:
+No EventKit access is attempted during installation or build. The first read may request Calendar or Reminders permission for `EventKit Read Helper`; the first creation may separately request full Calendar permission for `EventKit Calendar Create Helper`.
+
+## MCP tools
+
+| Tool | Purpose |
+| --- | --- |
+| `reminders_read` | Read and filter reminders |
+| `reminder_lists_read` | Read reminder-list metadata |
+| `reminder_subtasks_read` | Read checklist items encoded in a reminder note |
+| `calendar_events_read` | Read and filter events in a date range |
+| `calendars_read` | Read every calendar's stable ID, writable status, and optional date-range event count |
+| `calendar_event_create` | Create exactly one approved event in a writable calendar selected by stable ID |
+
+The five read tools are annotated read-only and idempotent. `calendar_event_create` is marked `readOnlyHint: false`, `destructiveHint: false`, and `idempotentHint: false`. It requires `confirmed: true` after the client presents the exact event details and obtains user approval. Every schema sets `additionalProperties: false`; the strict runtime create schema rejects unadvertised fields, calendar names, and default-calendar fallbacks. The router overwrites any forged action with the operation implied by the independently named tool.
+
+Creation requires the exact `calendarId` returned by `calendars_read`. It fails if the ID is missing, read-only, or not event-capable. Bare `YYYY-MM-DD` inputs create all-day events and use an inclusive `endDate`; timed events require an end instant after the start. Creation is not automatically retried: if the native process times out after saving, its result explicitly says the outcome is unknown and Calendar must be inspected before retrying.
+
+## Local MCP configuration
+
+After building, configure a local stdio MCP client with an absolute path and the four mandatory hashes shown above.
 
 ```json
 {
   "mcpServers": {
-    "apple-reminders": {
-      "command": "npx",
-      "args": ["-y", "mcp-server-apple-events"]
-    }
-  }
-}
-```
-
-### ChatWise
-
-Settings → Tools → "+", then:
-
-- Type: `stdio`
-- ID: `apple-reminders`
-- Command: `mcp-server-apple-events`
-- Args: (empty)
-
-### Claude Desktop
-
-Edit `claude_desktop_config.json` (open it via Settings → Developer Option → Edit Config, or directly at `~/Library/Application Support/Claude/claude_desktop_config.json` on macOS / `%APPDATA%\Claude\claude_desktop_config.json` on Windows):
-
-```json
-{
-  "mcpServers": {
-    "apple-reminders": {
-      "command": "npx",
-      "args": ["-y", "mcp-server-apple-events"]
-    }
-  }
-}
-```
-
-For a local build:
-
-```json
-{
-  "mcpServers": {
-    "apple-reminders": {
+    "eventkit": {
       "command": "node",
-      "args": ["/absolute/path/to/mcp-server-apple-events/dist/index.js"]
+      "args": ["/absolute/path/to/mcp-server-eventkit/dist/index.js"],
+      "env": {
+        "EVENTKIT_HELPER_SHA256": "<exact helper hash>",
+        "EVENTKIT_DISCLAIM_SHA256": "<exact read shim hash>",
+        "EVENTKIT_CREATE_HELPER_SHA256": "<exact create-helper hash>",
+        "EVENTKIT_CREATE_DISCLAIM_SHA256": "<exact create shim hash>"
+      }
     }
   }
 }
 ```
 
-See the [official MCP docs](https://modelcontextprotocol.io/docs/develop/connect-local-servers) for connecting local servers. Restart Claude Desktop completely (quit, not just close) for changes to take effect.
+Keep client approval enabled. Do not use an unreviewed npm or `npx` package in place of this local checkout.
 
-## macOS Permissions
+## Planned additional write support
 
-The vendored `event` CLI embeds its own Info.plist (bundle id `me.frad.event`) declaring all Reminders and Calendar privacy strings, and is spawned through the bundled `bin/event-disclaim` shim, which disclaims TCC responsibility at spawn time. macOS therefore attributes the permission request to **`event`** itself, not the app that launched the MCP server — so the first EventKit call prompts for "event", the grant appears under `System Settings > Privacy & Security > Reminders / Calendars` as `event`, and one grant covers every MCP client on the machine (Claude Desktop, Codex Desktop, Cursor, terminal clients, …). See [issue #93](https://github.com/FradSer/mcp-server-apple-events/issues/93) for background.
+Writes will not be added to the read helper. Each mutation will use a separately named MCP tool and narrowly scoped native write helper so a client can distinguish and approve it:
 
-When `event` detects a `notDetermined` status it calls `requestFullAccessToReminders` / `requestFullAccessToEvents`, which surfaces the system prompt. If the OS ever loses track of permissions, rerun `./check-permissions.sh` to re-open the dialogs.
+- create reminder
+- update reminder or calendar event
+- complete a reminder
+- delete reminder or calendar event
 
-### Calendar read errors
+Destructive tools will require stable EventKit identifiers, explicit target metadata in the response, and separate confirmation-oriented tests before release.
 
-If you see `Failed to read calendar events`, set Calendar to **Full Calendar Access** under `System Settings > Privacy & Security > Calendars`, or rerun `./check-permissions.sh` (it checks both Reminders and Calendars).
+## Attribution and license
 
-### Recovering a stuck TCC state (no prompt ever appears)
-
-If the permission dialog never appears and `event` is missing from `System Settings → Privacy & Security → Reminders / Calendars`, your machine is in a stale/misattributed TCC state. The server-side disclaim fix prevents this on a clean machine but cannot clear already-corrupted entries. Recovery:
-
-1. Reset Calendar and Reminders TCC entries globally (per-app reset frequently does **not** work — the bare form clears all entries, which is what clears the bad state):
-
-   ```bash
-   tccutil reset Calendar
-   tccutil reset Reminders
-   ```
-
-   > This clears Calendar/Reminders access for **every** app; other apps re-prompt next time.
-
-2. Re-trigger the permission from inside a Claude conversation (Claude Desktop or Claude Code) by asking, e.g., *"Use AppleScript to check my Calendar and Reminders."* Grant access and the server should work normally. See [issue #83](https://github.com/FradSer/mcp-server-apple-events/issues/83).
-
-### Headless / launchd runs hang instead of failing
-
-When the server runs from a context with no GUI session (SSH, launchd agent/daemon), the first EventKit call can block forever waiting on a permission prompt that can never be rendered — the MCP request never settles and a child process leaks per call. The server now kills any `event` call that exceeds 30 s (`SIGKILL`) and returns a readable error instead. Tune it with the `EVENTKIT_CLI_TIMEOUT_MS` environment variable (milliseconds; invalid/zero values fall back to the default — the timeout cannot be disabled, though huge values up to `2^31-1` ms are accepted). The vendored `event` CLI (pinned via [FradSer/event#15](https://github.com/FradSer/event/pull/15)) additionally fails fast when no GUI session exists and gives up on an unanswerable prompt after 15 s (`EVENT_PERMISSION_TIMEOUT_MS`), reporting `Permission denied: Timed out waiting for ...` so the host can show a permission-specific message before the server's kill fires (15 s < 30 s). See [issue #113](https://github.com/FradSer/mcp-server-apple-events/issues/113).
-
-### macOS 26 (Tahoe) `could not build module 'Foundation'`
-
-If `pnpm build` fails with `could not build module 'Foundation'` (or `SDK is not supported by the compiler`), your Swift toolchain is older than the macOS 26 SDK requires — it needs **Swift 6.3 or newer**, but the Command Line Tools shipped with early macOS 26 point releases include Swift 6.2.x. `pnpm build:event` detects this and prints the same remediation; see [issue #85](https://github.com/FradSer/mcp-server-apple-events/issues/85). Fix by installing Xcode 26.x from the App Store, or updating Command Line Tools to a Swift 6.3+ version:
-
-```bash
-softwareupdate --list
-sudo softwareupdate -i "Command Line Tools for Xcode-<latest>"
-sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer   # if full Xcode is installed
-xcrun swiftc --version    # should report Apple Swift version 6.3 or newer
-```
-
-## Usage Examples
-
-Once configured, ask Claude to interact with your Apple Reminders and Calendar. Example prompts:
-
-```text
-Create a reminder to "Buy groceries" for tomorrow at 5 PM with tags shopping and errands.
-Add a high-priority reminder to "Finish quarterly report" due Friday in my "Work" list.
-Create "Grocery shopping" with subtasks: milk, eggs, bread, butter.
-Show me all high-priority reminders due today tagged "urgent".
-Show subtasks for my "Grocery shopping" reminder and mark "milk" as complete.
-Update "Buy groceries" — change the title to "Buy organic groceries" and set priority to high.
-Show reminders from my "Work" list, and list all my reminder lists.
-Create a calendar event "Team standup" tomorrow from 9:00 to 9:30 in "Work".
-Show my calendar events for the next week.
-```
-
-The server processes natural-language requests, interacts with Apple's native Reminders and Calendar apps, and returns formatted results.
-
-> Alarms, recurrence rules, and location triggers are read-only via this server — configure them in Reminders.app / Calendar.app. They still appear in read results with visual indicators.
-
-## Available MCP Tools
-
-Service-scoped tools mirror Apple Reminders and Calendar domains. All take an `action` field plus action-specific parameters (the MCP client introspects the full Zod schema; only actions are listed here). Date fields accept `YYYY-MM-DD`, `YYYY-MM-DD HH:mm:ss` (local time), or ISO 8601 with timezone.
-
-| Tool | Actions | Notes |
-| --- | --- | --- |
-| `reminders_tasks` | `read`, `create`, `update`, `delete` | Priority, tags, subtasks. `startDate` is set via `update`, not `create`; on `read` it scopes the due-date window alongside `endDate`. Cross-list moves unsupported. |
-| `reminders_subtasks` | `read`, `create`, `update`, `delete`, `toggle`, `reorder` | Stored in the notes field (human-readable in Reminders.app). |
-| `reminders_lists` | `read`, `create`, `update`, `delete` | Rename via `name` → `newName`. |
-| `calendar_events` | `read`, `create`, `update`, `delete` | All-day inferred from date format. Cross-calendar moves unsupported. `span` scopes recurring deletes. |
-| `calendar_calendars` | `read` | Calendars holding ≥1 event in the (optional) `startDate`/`endDate` window. |
-
-Example calls:
-
-```json
-{
-  "action": "create",
-  "title": "Buy groceries",
-  "dueDate": "2024-03-25 18:00:00",
-  "targetList": "Shopping",
-  "note": "Don't forget milk and eggs",
-  "priority": 1,
-  "tags": ["shopping", "errands"],
-  "subtasks": ["Milk", "Eggs", "Bread"]
-}
-```
-
-```json
-{ "action": "read", "filterList": "Work", "dueWithin": "today", "filterPriority": "high", "filterTags": ["urgent"] }
-```
-
-```json
-{ "action": "read", "startDate": "2026-08-01", "endDate": "2026-08-31" }
-```
-
-```json
-{ "action": "update", "id": "reminder-123", "completed": false, "addTags": ["followup"] }
-```
-
-```json
-{ "action": "toggle", "reminderId": "reminder-123", "subtaskId": "a1b2c3d4" }
-```
-
-```json
-{ "action": "create", "name": "Project Alpha" }
-```
-
-```json
-{ "action": "create", "title": "Team standup", "startDate": "2026-05-04 09:00:00", "endDate": "2026-05-04 09:30:00", "targetCalendar": "Work" }
-```
-
-### Read response shape
-
-Read responses carry visual indicators: 🔄 recurring, 📍 location-based, 🏷️ has tags, 📋 has subtasks. Example:
-
-```text
-- [ ] Buy groceries 🏷️📋
-  - List: Shopping
-  - ID: reminder-123
-  - Priority: high
-  - Tags: #shopping #errands
-  - Subtasks (1/3):
-    - [x] Milk
-    - [ ] Eggs
-    - [ ] Bread
-  - Due: 2024-03-25 18:00:00
-```
-
-The `url` field is stored in the native `url` property (visible via the "i" icon in Reminders.app) and also appended to the notes in a structured `URLs:` block for parsing and multi-URL support. URLs accept any valid URI scheme (`http`, `https`, `mailto`, `tel`, `obsidian`, `shortcuts`, …); `file`, `javascript`, `data`, and similar dangerous schemes are rejected, and http(s) hostnames are checked against an SSRF blocklist.
-
-> **Read-only fields**: alarms, recurrence rules, location triggers, structured locations, calendar `url`/`availability`/`isAllDay`, and cross-calendar moves are not writable via this server — they round-trip from values configured in Reminders.app / Calendar.app. See [docs/migration-to-event-cli.md](docs/migration-to-event-cli.md) for the full dropped-field table and workarounds.
-
-## Structured Prompt Library
-
-The server ships a prompt registry exposed via the MCP `ListPrompts` / `GetPrompt` endpoints. Each template shares a mission, context inputs, numbered process, constraints, output format, and quality bar so downstream assistants get predictable scaffolding.
-
-- **daily-task-organizer** — optional `today_focus`; produces a same-day execution blueprint, balances priority work with recovery, auto-creates calendar time blocks for due-today reminders.
-- **smart-reminder-creator** — optional `task_idea`; generates an optimally scheduled reminder structure.
-- **reminder-review-assistant** — optional `review_focus` (e.g. `overdue` or a list name); audits and optimizes existing reminders.
-- **weekly-planning-workflow** — optional `user_ideas`; guides a Monday-through-Sunday reset with time blocks tied to existing lists.
-
-Prompts are constrained to native Apple Reminders capabilities and ask for missing context before irreversible actions. Run `pnpm test -- src/server/prompts.test.ts` after amending prompt copy.
-
-## Development
-
-```bash
-pnpm install        # postinstall builds bin/event from vendor/event on macOS
-pnpm build          # TypeScript + vendored event CLI
-pnpm test           # Jest suite: repositories, schemas, build script, prompt templates
-pnpm exec biome check   # lint + format
-```
-
-The CLI entry point walks up to ten directories to find `package.json`, so the server can start from nested paths (e.g. `dist/` or editor task runners) without losing `bin/event`. Keep the manifest reachable within that depth if you customize the folder layout.
-
-### Scripts
-
-- `pnpm build` — TypeScript + vendored `event` CLI (required before running from source)
-- `pnpm build:ts` — TypeScript only
-- `pnpm build:event` — vendored `event` CLI only (`swift build -c release` → `bin/event`)
-- `pnpm build:release` — build plus notarization (release packaging)
-- `pnpm test` / `pnpm test:ci` — Jest suite / with coverage
-- `pnpm lint` — Biome format/fix + TypeScript type check
-- `pnpm check` — lint + tests with coverage
-
-## License
-
-MIT
-
-## Contributing
-
-Contributions welcome! Please read the contributing guidelines first.
+Original work copyright its contributors, including Frad Lee. This fork remains available under the [MIT License](LICENSE).

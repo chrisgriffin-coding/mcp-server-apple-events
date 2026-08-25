@@ -1,15 +1,13 @@
 /**
- * @fileoverview `event` CLI execution wrapper
+ * @fileoverview EventKit helper execution wrapper
  * @module utils/eventCli
- * @description Spawns the vendored `event` Swift binary (FradSer/event) and
- * translates its stdout / stderr / exit code into JSON results, plain-text
- * results, or domain-specific errors. `event` outputs raw JSON to stdout and
- * writes `Error: <message>` to stderr with a non-zero exit code on failure.
+ * @description Spawns this repository's separately signed read-only and
+ * create-only Swift helpers, translating stdout / stderr / exit status into
+ * JSON or domain-specific errors.
  */
 
 import type { ExecFileException } from 'node:child_process';
 import { execFile } from 'node:child_process';
-import fs from 'node:fs';
 import path from 'node:path';
 import {
   findSecureBinaryPath,
@@ -21,80 +19,43 @@ import { bufferToString } from './helpers.js';
 import { findProjectRoot } from './projectUtils.js';
 
 /**
- * Validated binary path plus a fingerprint of the file at validation time.
- * Re-validate when the on-disk binary changes (closes the TOCTOU window
- * between calls); short-circuit otherwise.
- */
-interface BinaryFingerprint {
-  ino: number;
-  mtimeMs: number;
-  size: number;
-}
-
-/**
- * How to launch `event`. When the disclaim shim (`bin/event-disclaim`) is
- * present, `event` is spawned through it so it becomes its own
+ * How to launch the helper through its mandatory TCC responsibility shim.
  * TCC-responsible process — the EventKit permission prompt then appears
  * regardless of whether the host MCP client (Codex Desktop, Claude Desktop,
- * …) declares EventKit usage strings (issue #93). When the shim is absent
- * (e.g. an older prebuilt install), fall back to spawning `event` directly,
- * which preserves the pre-shim host-attribution behavior.
+ * …) declares EventKit usage strings (issue #93).
  */
 interface ResolvedLaunch {
   cliPath: string;
-  disclaimPath: string | null;
+  disclaimPath: string;
 }
 
-// A no-shim launch is cached too (`disclaimFingerprint: null`) and stays
-// valid only while the shim's canonical path remains absent — so a shim that
-// appears after a rebuild is picked up on the next call, and the no-shim
-// path doesn't re-run full validation (which hashes the ~50 MB binary when
-// SWIFT_BINARY_HASH is pinned) on every tool call.
-let cachedLaunch: {
-  launch: ResolvedLaunch;
-  disclaimCanonicalPath: string;
-  cliFingerprint: BinaryFingerprint;
-  disclaimFingerprint: BinaryFingerprint | null;
-} | null = null;
-
-// Emitted once per process so a missing/invalid shim (which silently reverts
-// EventKit prompts to host-app attribution — the issue #93 failure mode) is
-// diagnosable from the host's MCP server logs.
-let warnedShimUnavailable = false;
-
-/** Clears the cached binary path (for testing). */
+/** Clears mutable warning state (kept under the historical test helper name). */
 export function clearEventBinaryPathCache(): void {
-  cachedLaunch = null;
-  warnedShimUnavailable = false;
   warnedInvalidTimeout = false;
 }
 
-const fingerprintFor = (filePath: string): BinaryFingerprint | null => {
-  try {
-    const stat = fs.statSync(filePath);
-    return { ino: stat.ino, mtimeMs: stat.mtimeMs, size: stat.size };
-  } catch {
-    return null;
-  }
-};
+const SHA256_PATTERN = /^[a-f0-9]{64}$/i;
 
-const fingerprintMatches = (
-  a: BinaryFingerprint | null,
-  b: BinaryFingerprint | null,
-): boolean =>
-  a !== null &&
-  b !== null &&
-  a.ino === b.ino &&
-  a.mtimeMs === b.mtimeMs &&
-  a.size === b.size;
+function requireSha256Environment(
+  name: string,
+  value: string | undefined,
+): string {
+  const normalized = value?.trim();
+  if (!normalized || !SHA256_PATTERN.test(normalized)) {
+    throw new CliUserError(
+      `${name} is required and must be the 64-character SHA-256 printed by \`pnpm run build:helper\`.`,
+    );
+  }
+  return normalized.toLowerCase();
+}
 
 /**
- * Maximum wall-clock time the `event` CLI may run before the child is killed
+ * Maximum wall-clock time the EventKit helper may run before it is killed
  * (default 30 s, overridable via `EVENTKIT_CLI_TIMEOUT_MS`). `execFile`'s
  * default timeout is 0 — "wait forever" — which hangs the MCP request and
- * leaks a child when `event` blocks on an EventKit permission prompt that can
+ * leaks a child when the helper blocks on an EventKit permission prompt that can
  * never be displayed (headless/launchd context, issue #113). Killed with
- * SIGKILL because the disclaim shim exec-replaces itself into `event`
+ * SIGKILL because the disclaim shim exec-replaces itself into the helper
  * (same PID), so the kill always reaches the real process.
  */
 const DEFAULT_CLI_TIMEOUT_MS = 30_000;
@@ -240,10 +201,13 @@ function throwForStderr(stderr: string): never {
     throw new Error('event execution failed: unknown error');
   }
   // The disclaim shim reports its own spawn failures as
-  // `event-disclaim: <detail>` (no "Error: " prefix). Surface them verbatim
+  // `eventkit-read-helper-disclaim: <detail>` (no "Error: " prefix).
   // as user-actionable errors — otherwise production error formatting
   // collapses them into a generic "System error occurred".
-  if (message.startsWith('event-disclaim:')) {
+  if (
+    message.startsWith('eventkit-read-helper-disclaim:') ||
+    message.startsWith('eventkit-calendar-create-helper-disclaim:')
+  ) {
     throw new CliUserError(message);
   }
   // Only structured "Error: ..." stderr is treated as a user-actionable
@@ -263,12 +227,12 @@ function throwForStderr(stderr: string): never {
 async function runEventCli(
   launch: ResolvedLaunch,
   args: string[],
+  mutationMayHaveCommitted = false,
 ): Promise<ExecResult> {
-  // Route through the disclaim shim when it exists: `event-disclaim <event>
-  // <args…>` re-execs `event` with TCC responsibility disclaimed.
-  const file = launch.disclaimPath ?? launch.cliPath;
-  const argv = launch.disclaimPath ? [launch.cliPath, ...args] : args;
-  const { result, error } = await execFilePromise(file, argv);
+  const { result, error } = await execFilePromise(launch.disclaimPath, [
+    launch.cliPath,
+    ...args,
+  ]);
   const stderr = bufferToString(result.stderr) ?? '';
 
   if (error) {
@@ -280,13 +244,15 @@ async function runEventCli(
       const stderrDetail = stderr
         ? ` (stderr before kill: ${stderr.trim()})`
         : '';
+      const mutationWarning = mutationMayHaveCommitted
+        ? ' The event may already have been created. Do not retry automatically; inspect the target calendar first to avoid a duplicate.'
+        : '';
       throw new CliUserError(
-        `event execution failed: timed out after ${result.timeoutMs} ms (killed)${stderrDetail}. ` +
+        `event execution failed: timed out after ${result.timeoutMs} ms (killed)${stderrDetail}.${mutationWarning} ` +
           'The CLI was stuck — possible causes: an EventKit permission prompt that cannot ' +
           'be displayed (headless/launchd context), a slow operation exceeding the timeout, ' +
           'or a stalled system. Grant access in System Settings > Privacy & Security if a ' +
-          'prompt was expected; otherwise raise EVENTKIT_CLI_TIMEOUT_MS. A write operation ' +
-          'may have completed despite this error — verify before retrying.',
+          'prompt was expected; otherwise raise EVENTKIT_CLI_TIMEOUT_MS.',
       );
     }
     if (stderr) {
@@ -300,55 +266,36 @@ async function runEventCli(
 }
 
 function resolveLaunchOrThrow(): ResolvedLaunch {
-  if (cachedLaunch) {
-    const { launch } = cachedLaunch;
-    const cliOk = fingerprintMatches(
-      cachedLaunch.cliFingerprint,
-      fingerprintFor(launch.cliPath),
-    );
-    const disclaimOk = launch.disclaimPath
-      ? fingerprintMatches(
-          cachedLaunch.disclaimFingerprint,
-          fingerprintFor(launch.disclaimPath),
-        )
-      : fingerprintFor(cachedLaunch.disclaimCanonicalPath) === null;
-    if (cliOk && disclaimOk) {
-      return launch;
-    }
-  }
-  cachedLaunch = null;
-
   const projectRoot = findProjectRoot();
   const binaryName = FILE_SYSTEM.SWIFT_BINARY_NAME;
   const canonicalPath = path.join(projectRoot, 'bin', binaryName);
+  const helperHash = requireSha256Environment(
+    'EVENTKIT_HELPER_SHA256',
+    process.env.EVENTKIT_HELPER_SHA256,
+  );
 
-  // Restrict the validator's suffix matcher to this one absolute path so a
-  // misconfigured allowlist can't accept `/usr/local/bin/event` or any other
-  // `bin/event` on disk by accident.
+  // Restrict validation to the one absolute helper path in this checkout.
   const config = {
     ...getEnvironmentBinaryConfig(),
+    expectedHash: helperHash,
     allowedPaths: [canonicalPath],
   };
 
   const { path: cliPath } = findSecureBinaryPath([canonicalPath], config);
   if (!cliPath) {
     throw new CliUserError(
-      `event CLI binary not found at ${canonicalPath}.
+      `Read-only EventKit helper was not found or failed integrity/signature validation at ${canonicalPath}.
 
-The vendored \`event\` Swift binary is normally built automatically by the
-postinstall script, but that step may have been skipped or failed (for example
-when the package was installed without devDependencies, on a non-macOS host,
-or before Xcode Command Line Tools were available).
+The repository-owned helper is built only by an explicit command and requires
+the exact SHA-256 printed by that build.
 
-To build it manually, clone the repository and run a local build:
-   git clone --recurse-submodules https://github.com/fradser/mcp-server-apple-events.git
-   cd mcp-server-apple-events
-   pnpm install
-   pnpm build
+From the repository root, build it explicitly:
+   pnpm install --ignore-scripts --frozen-lockfile
+   pnpm run build:helper
+   pnpm run build:ts
 
-Then use the local path in your Claude Desktop config:
-   "command": "node",
-   "args": ["/absolute/path/to/mcp-server-apple-events/bin/run.cjs"]`,
+Then set EVENTKIT_HELPER_SHA256 and EVENTKIT_DISCLAIM_SHA256 to the values
+printed by the build in your MCP client environment.`,
     );
   }
 
@@ -359,48 +306,66 @@ Then use the local path in your Claude Desktop config:
   );
   const { path: disclaimPath } = findSecureBinaryPath([disclaimCanonicalPath], {
     ...getEnvironmentBinaryConfig(),
-    // SWIFT_BINARY_HASH pins bin/event, not the shim — carrying it over here
-    // would reject the shim on every strict-mode install and silently revert
-    // to host-attributed prompts. The shim gets its own optional pin.
-    expectedHash: process.env.SWIFT_DISCLAIM_BINARY_HASH,
+    expectedHash: requireSha256Environment(
+      'EVENTKIT_DISCLAIM_SHA256',
+      process.env.EVENTKIT_DISCLAIM_SHA256,
+    ),
+    maxFileSize: 1024 * 1024,
     allowedPaths: [disclaimCanonicalPath],
   });
 
-  if (
-    !disclaimPath &&
-    !warnedShimUnavailable &&
-    process.env.NODE_ENV !== 'test'
-  ) {
-    warnedShimUnavailable = true;
-    console.error(
-      `event-disclaim shim not found or failed validation at ${disclaimCanonicalPath}; ` +
-        'spawning event directly. EventKit permission prompts will be attributed ' +
-        'to the host app instead of event (issue #93). Rebuild with `pnpm build` ' +
-        'to restore the shim.',
+  if (!disclaimPath) {
+    throw new CliUserError(
+      `EventKit responsibility shim was not found or failed integrity/signature validation at ${disclaimCanonicalPath}. Rebuild with \`pnpm run build:helper\` and update EVENTKIT_DISCLAIM_SHA256.`,
     );
   }
 
-  const launch: ResolvedLaunch = { cliPath, disclaimPath };
-  const cliFingerprint = fingerprintFor(cliPath);
-  const disclaimFingerprint = disclaimPath
-    ? fingerprintFor(disclaimPath)
-    : null;
-  // A shim that resolved but vanished before fingerprinting (race) leaves
-  // disclaimFingerprint null with disclaimPath set — don't cache that; the
-  // next call re-resolves.
-  if (cliFingerprint && (disclaimPath === null || disclaimFingerprint)) {
-    cachedLaunch = {
-      launch,
-      disclaimCanonicalPath,
-      cliFingerprint,
-      disclaimFingerprint,
-    };
+  return { cliPath, disclaimPath };
+}
+
+function resolveCreateLaunchOrThrow(): ResolvedLaunch {
+  const projectRoot = findProjectRoot();
+  const binaryName = FILE_SYSTEM.CALENDAR_CREATE_BINARY_NAME;
+  const canonicalPath = path.join(projectRoot, 'bin', binaryName);
+  const helperHash = requireSha256Environment(
+    'EVENTKIT_CREATE_HELPER_SHA256',
+    process.env.EVENTKIT_CREATE_HELPER_SHA256,
+  );
+  const { path: cliPath } = findSecureBinaryPath([canonicalPath], {
+    ...getEnvironmentBinaryConfig(),
+    expectedHash: helperHash,
+    allowedPaths: [canonicalPath],
+  });
+  if (!cliPath) {
+    throw new CliUserError(
+      `Create-only EventKit helper was not found or failed integrity/signature validation at ${canonicalPath}. Rebuild with \`pnpm run build:helper\` and update EVENTKIT_CREATE_HELPER_SHA256.`,
+    );
   }
-  return launch;
+
+  const disclaimCanonicalPath = path.join(
+    projectRoot,
+    'bin',
+    FILE_SYSTEM.CALENDAR_CREATE_DISCLAIM_BINARY_NAME,
+  );
+  const { path: disclaimPath } = findSecureBinaryPath([disclaimCanonicalPath], {
+    ...getEnvironmentBinaryConfig(),
+    expectedHash: requireSha256Environment(
+      'EVENTKIT_CREATE_DISCLAIM_SHA256',
+      process.env.EVENTKIT_CREATE_DISCLAIM_SHA256,
+    ),
+    maxFileSize: 1024 * 1024,
+    allowedPaths: [disclaimCanonicalPath],
+  });
+  if (!disclaimPath) {
+    throw new CliUserError(
+      `Create-helper responsibility shim was not found or failed integrity/signature validation at ${disclaimCanonicalPath}. Rebuild with \`pnpm run build:helper\` and update EVENTKIT_CREATE_DISCLAIM_SHA256.`,
+    );
+  }
+  return { cliPath, disclaimPath };
 }
 
 /**
- * Executes the `event` binary and parses its stdout as raw JSON.
+ * Executes the read-only helper and parses its stdout as raw JSON.
  *
  * @template T - Expected JSON type emitted by `event`
  * @param args - Full argv (including subcommand and `--json` where supported)
@@ -428,6 +393,24 @@ export async function executeEventCliJson<T>(args: string[]): Promise<T> {
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     throw new Error(`event execution failed: Invalid CLI output - ${detail}`);
+  }
+}
+
+/** Executes the separately signed create-only Calendar helper. */
+export async function executeCalendarCreateCliJson<T>(
+  args: string[],
+): Promise<T> {
+  const launch = resolveCreateLaunchOrThrow();
+  const { stdout } = await runEventCli(launch, args, true);
+  const normalized = bufferToString(stdout);
+  if (!normalized) {
+    throw new Error('event creation failed: Empty CLI output');
+  }
+  try {
+    return JSON.parse(normalized) as T;
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(`event creation failed: Invalid CLI output - ${detail}`);
   }
 }
 

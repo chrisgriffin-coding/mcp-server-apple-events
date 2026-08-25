@@ -1,136 +1,55 @@
 /**
- * tools/index.ts
- * Tool routing: normalizes names, dispatches to handlers
+ * Read-only tool routing.
+ *
+ * The MCP-facing schemas intentionally omit the upstream action discriminator.
+ * This router injects `read` internally so callers cannot smuggle a mutation
+ * through a mixed-action tool.
  */
 
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type {
   CalendarsToolArgs,
   CalendarToolArgs,
-  ListsToolArgs,
   RemindersToolArgs,
   SubtasksToolArgs,
 } from '../types/index.js';
-import { MESSAGES, TOOLS as TOOL_NAMES } from '../utils/constants.js';
+import { MESSAGES } from '../utils/constants.js';
 import { TOOLS } from './definitions.js';
 import {
   handleCreateCalendarEvent,
-  handleCreateReminder,
-  handleCreateReminderList,
-  handleCreateSubtask,
-  handleDeleteCalendarEvent,
-  handleDeleteReminder,
-  handleDeleteReminderList,
-  handleDeleteSubtask,
   handleReadCalendarEvents,
   handleReadCalendars,
   handleReadReminderLists,
   handleReadReminders,
   handleReadSubtasks,
-  handleReorderSubtasks,
-  handleToggleSubtask,
-  handleUpdateCalendarEvent,
-  handleUpdateReminder,
-  handleUpdateReminderList,
-  handleUpdateSubtask,
 } from './handlers/index.js';
 
-type ToolArgs =
-  | RemindersToolArgs
-  | ListsToolArgs
-  | SubtasksToolArgs
-  | CalendarToolArgs
-  | CalendarsToolArgs;
-
-type ToolRouter = (args?: ToolArgs) => Promise<CallToolResult>;
-
-type ActionHandler<TArgs extends { action: string }> = (
-  args: TArgs,
-) => Promise<CallToolResult>;
-
-type RoutedToolName =
-  | 'reminders_tasks'
-  | 'reminders_lists'
-  | 'reminders_subtasks'
-  | 'calendar_events';
-type ToolName = RoutedToolName | 'calendar_calendars';
-
-/**
- * Creates an action router for tools with multiple actions
- */
-const createActionRouter = <TArgs extends { action: string }>(
-  toolName: RoutedToolName,
-  handlerMap: Record<TArgs['action'], ActionHandler<TArgs>>,
-): ToolRouter => {
-  return async (args?: ToolArgs) => {
-    if (!args) {
-      return createErrorResponse('No arguments provided');
-    }
-
-    const typedArgs = args as TArgs;
-    const action = typedArgs.action;
-
-    if (!(action in handlerMap)) {
-      return createErrorResponse(
-        MESSAGES.ERROR.UNKNOWN_ACTION(toolName, String(action)),
-      );
-    }
-
-    const handler = handlerMap[action as keyof typeof handlerMap];
-    return handler(typedArgs);
-  };
-};
+type ToolArguments = Record<string, unknown>;
+type ToolRouter = (args: ToolArguments) => Promise<CallToolResult>;
 
 const TOOL_ROUTER_MAP = {
-  [TOOL_NAMES.REMINDERS_TASKS]: createActionRouter<RemindersToolArgs>(
-    TOOL_NAMES.REMINDERS_TASKS,
-    {
-      read: (reminderArgs) => handleReadReminders(reminderArgs),
-      create: (reminderArgs) => handleCreateReminder(reminderArgs),
-      update: (reminderArgs) => handleUpdateReminder(reminderArgs),
-      delete: (reminderArgs) => handleDeleteReminder(reminderArgs),
-    },
-  ),
-  [TOOL_NAMES.REMINDERS_LISTS]: createActionRouter<ListsToolArgs>(
-    TOOL_NAMES.REMINDERS_LISTS,
-    {
-      read: () => handleReadReminderLists(),
-      create: (listArgs) => handleCreateReminderList(listArgs),
-      update: (listArgs) => handleUpdateReminderList(listArgs),
-      delete: (listArgs) => handleDeleteReminderList(listArgs),
-    },
-  ),
-  [TOOL_NAMES.REMINDERS_SUBTASKS]: createActionRouter<SubtasksToolArgs>(
-    TOOL_NAMES.REMINDERS_SUBTASKS,
-    {
-      read: (subtaskArgs) => handleReadSubtasks(subtaskArgs),
-      create: (subtaskArgs) => handleCreateSubtask(subtaskArgs),
-      update: (subtaskArgs) => handleUpdateSubtask(subtaskArgs),
-      delete: (subtaskArgs) => handleDeleteSubtask(subtaskArgs),
-      toggle: (subtaskArgs) => handleToggleSubtask(subtaskArgs),
-      reorder: (subtaskArgs) => handleReorderSubtasks(subtaskArgs),
-    },
-  ),
-  [TOOL_NAMES.CALENDAR_EVENTS]: createActionRouter<CalendarToolArgs>(
-    TOOL_NAMES.CALENDAR_EVENTS,
-    {
-      read: (calendarArgs) => handleReadCalendarEvents(calendarArgs),
-      create: (calendarArgs) => handleCreateCalendarEvent(calendarArgs),
-      update: (calendarArgs) => handleUpdateCalendarEvent(calendarArgs),
-      delete: (calendarArgs) => handleDeleteCalendarEvent(calendarArgs),
-    },
-  ),
-  [TOOL_NAMES.CALENDAR_CALENDARS]: async (args?: ToolArgs) => {
-    return handleReadCalendars(args as CalendarsToolArgs | undefined);
-  },
-} satisfies Record<ToolName, ToolRouter>;
+  reminders_read: async (args) =>
+    handleReadReminders({ ...args, action: 'read' } as RemindersToolArgs),
+  reminder_lists_read: async () => handleReadReminderLists(),
+  reminder_subtasks_read: async (args) =>
+    handleReadSubtasks({ ...args, action: 'read' } as SubtasksToolArgs),
+  calendar_events_read: async (args) =>
+    handleReadCalendarEvents({ ...args, action: 'read' } as CalendarToolArgs),
+  calendars_read: async (args) =>
+    handleReadCalendars({ ...args, action: 'read' } as CalendarsToolArgs),
+  calendar_event_create: async (args) =>
+    handleCreateCalendarEvent({
+      ...args,
+      action: 'create',
+    } as CalendarToolArgs),
+} satisfies Record<string, ToolRouter>;
+
+type ToolName = keyof typeof TOOL_ROUTER_MAP;
+const MANAGED_TOOL_NAMES = new Set<string>(Object.keys(TOOL_ROUTER_MAP));
 
 const isManagedToolName = (value: string): value is ToolName =>
-  value in TOOL_ROUTER_MAP;
+  MANAGED_TOOL_NAMES.has(value);
 
-/**
- * Creates an error response with the given message
- */
 function createErrorResponse(message: string): CallToolResult {
   return {
     content: [{ type: 'text', text: message }],
@@ -140,14 +59,18 @@ function createErrorResponse(message: string): CallToolResult {
 
 export async function handleToolCall(
   name: string,
-  args?: ToolArgs,
+  args: unknown,
 ): Promise<CallToolResult> {
   if (!isManagedToolName(name)) {
     return createErrorResponse(MESSAGES.ERROR.UNKNOWN_TOOL(name));
   }
 
-  const router = TOOL_ROUTER_MAP[name];
-  return router(args);
+  const safeArgs =
+    args !== null && typeof args === 'object' && !Array.isArray(args)
+      ? (args as ToolArguments)
+      : {};
+
+  return TOOL_ROUTER_MAP[name](safeArgs);
 }
 
 export { TOOLS };

@@ -83,7 +83,7 @@ function isCorrectProjectRoot(dir: string): boolean {
   try {
     const packageContent = fs.readFileSync(packageJsonPath, 'utf8');
     const packageData = JSON.parse(packageContent);
-    return packageData.name === 'mcp-server-apple-events';
+    return packageData.name === FILE_SYSTEM.PROJECT_PACKAGE_NAME;
   } catch {
     // Silently return false for any read/parse errors during project root discovery
     // This allows the search to continue up the directory tree

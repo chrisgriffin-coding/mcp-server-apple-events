@@ -1,6 +1,6 @@
 /**
  * reminderRepository.test.ts
- * Tests for the reminder repository against the vendored `event` CLI.
+ * Tests for the reminder repository against the read-only EventKit helper.
  *
  * Scenarios are organized by the four shapes the repository exposes:
  *   - read     → `event reminders list [--list <name>] [--completed] --json`
@@ -54,7 +54,7 @@ const reminderFixture = (overrides: Partial<ReminderJSON> = {}): ReminderJSON =>
     ...overrides,
   }) as ReminderJSON;
 
-describe('ReminderRepository (event CLI backend)', () => {
+describe('ReminderRepository (read-only EventKit helper backend)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockApplyReminderFilters.mockImplementation(

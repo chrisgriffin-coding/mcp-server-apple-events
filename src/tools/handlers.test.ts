@@ -563,16 +563,13 @@ describe('Tool Handlers', () => {
   // --- Calendar Event Handlers ---
 
   describe('handleCreateCalendarEvent', () => {
-    it('should return a success message with event ID', async () => {
+    it('returns the exact created target summary', async () => {
       const mockEvent = {
+        created: true as const,
         id: 'event-123',
         title: 'New Event',
-        startDate: '2025-11-04T14:00:00+08:00',
-        endDate: '2025-11-04T16:00:00+08:00',
         calendar: 'Work',
-        notes: null,
-        location: null,
-        url: null,
+        calendarId: 'calendar-123',
         isAllDay: false,
       };
       mockCalendarRepository.createEvent.mockResolvedValue(mockEvent);
@@ -581,11 +578,39 @@ describe('Tool Handlers', () => {
         title: 'New Event',
         startDate: '2025-11-04 14:00:00',
         endDate: '2025-11-04 16:00:00',
-        targetCalendar: 'Work',
+        calendarId: 'calendar-123',
+        confirmed: true,
       });
       const content = getTextContent(result.content);
-      expect(content).toContain('Successfully created event "New Event"');
-      expect(content).toContain('- ID: event-123');
+      expect(content).toContain(
+        'Successfully created exactly one calendar event',
+      );
+      expect(content).toContain('- Title (JSON): "New Event"');
+      expect(content).toContain('- Target calendar (JSON): "Work"');
+      expect(content).toContain('- Target calendar ID: calendar-123');
+      expect(content).toContain('- Event ID: event-123');
+      expect(mockCalendarRepository.createEvent).toHaveBeenCalledWith({
+        title: 'New Event',
+        startDate: '2025-11-04 14:00:00',
+        endDate: '2025-11-04 16:00:00',
+        calendarId: 'calendar-123',
+        notes: undefined,
+        location: undefined,
+      });
+    });
+
+    it('rejects creation without explicit confirmation', async () => {
+      const result = await handleCreateCalendarEvent({
+        action: 'create',
+        title: 'New Event',
+        startDate: '2025-11-04 14:00:00',
+        endDate: '2025-11-04 16:00:00',
+        calendarId: 'calendar-123',
+      });
+
+      expect(result.isError).toBe(true);
+      expect(getTextContent(result.content)).toContain('confirmed');
+      expect(mockCalendarRepository.createEvent).not.toHaveBeenCalled();
     });
   });
 
@@ -790,12 +815,19 @@ describe('Tool Handlers', () => {
 
   describe('handleReadCalendars', () => {
     it('should return calendars formatted as Markdown', async () => {
-      // The vendored `event` CLI has no EventKit calendar identifiers, so
-      // calendars synthesized from the read window have `id === title` and
-      // the `(ID: …)` suffix is omitted.
       const mockCalendars = [
-        { id: 'Work', title: 'Work' },
-        { id: 'Personal', title: 'Personal' },
+        {
+          id: 'calendar-work',
+          title: 'Work',
+          allowsContentModifications: true,
+          isImmutable: false,
+        },
+        {
+          id: 'calendar-personal',
+          title: 'Personal',
+          allowsContentModifications: false,
+          isImmutable: true,
+        },
       ];
       mockCalendarRepository.findCalendars.mockResolvedValue(mockCalendars);
       const result = await handleReadCalendars({ action: 'read' });
@@ -803,6 +835,8 @@ describe('Tool Handlers', () => {
       expect(content).toContain('### Calendars (Total: 2)');
       expect(content).toContain('- Work');
       expect(content).toContain('- Personal');
+      expect(content).toContain('  - ID: calendar-work');
+      expect(content).toContain('  - Writable: true');
       // Calendar titles are user-supplied — same untrusted-data notice as
       // the rest of the read surface (via formatListMarkdown).
       expect(content).toContain(
@@ -823,7 +857,13 @@ describe('Tool Handlers', () => {
 
     it('should support date-scoped calendar discovery with event counts', async () => {
       mockCalendarRepository.findCalendars.mockResolvedValue([
-        { id: 'Activity', title: 'Activity', eventCount: 7 },
+        {
+          id: 'calendar-activity',
+          title: 'Activity',
+          allowsContentModifications: true,
+          isImmutable: false,
+          eventCount: 7,
+        },
       ]);
 
       const result = await handleReadCalendars({

@@ -1,6 +1,6 @@
 /**
  * calendarRepository.test.ts
- * Tests for the calendar repository against the vendored `event` CLI.
+ * Tests for the calendar repository against the read-only EventKit helper.
  *
  * Scenarios are organized by the shapes the repository exposes:
  *   - read by id   → list a wide ±4-year window, then array `.find`
@@ -16,7 +16,11 @@
 
 import type { EventJSON } from '../types/repository.js';
 import { calendarRepository } from './calendarRepository.js';
-import { executeEventCliJson, executeEventCliPlain } from './eventCli.js';
+import {
+  executeCalendarCreateCliJson,
+  executeEventCliJson,
+  executeEventCliPlain,
+} from './eventCli.js';
 
 jest.mock('./eventCli.js');
 
@@ -26,12 +30,16 @@ const mockJson = executeEventCliJson as jest.MockedFunction<
 const mockPlain = executeEventCliPlain as jest.MockedFunction<
   typeof executeEventCliPlain
 >;
+const mockCreate = executeCalendarCreateCliJson as jest.MockedFunction<
+  typeof executeCalendarCreateCliJson
+>;
 
 const eventFixture = (overrides: Partial<EventJSON> = {}): EventJSON =>
   ({
     id: 'evt-1',
     title: 'Meeting',
     calendar: 'Work',
+    calendarId: 'calendar-work',
     startDate: '2025-11-04T09:00:00+08:00',
     endDate: '2025-11-04T10:00:00+08:00',
     notes: null,
@@ -41,7 +49,7 @@ const eventFixture = (overrides: Partial<EventJSON> = {}): EventJSON =>
     ...overrides,
   }) as EventJSON;
 
-describe('CalendarRepository (event CLI backend)', () => {
+describe('CalendarRepository (read-only EventKit helper backend)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
@@ -146,23 +154,48 @@ describe('CalendarRepository (event CLI backend)', () => {
   });
 
   describe('findAllCalendars', () => {
-    it('derives a distinct calendar listing from the wide read window', async () => {
+    it('reads stable EventKit IDs and writable status from the helper', async () => {
       mockJson.mockResolvedValueOnce([
-        eventFixture({ id: 'a', calendar: 'Work' }),
-        eventFixture({ id: 'b', calendar: 'Personal' }),
-        eventFixture({ id: 'c', calendar: 'Work' }),
-        eventFixture({ id: 'd', calendar: 'Family' }),
+        {
+          id: 'calendar-work',
+          title: 'Work',
+          color: '#FF0000',
+          allowsContentModifications: true,
+          isImmutable: false,
+        },
+        {
+          id: 'calendar-birthdays',
+          title: 'Birthdays',
+          color: null,
+          allowsContentModifications: false,
+          isImmutable: true,
+        },
       ]);
 
       const result = await calendarRepository.findAllCalendars();
 
-      expect(result.map((c) => c.title).sort()).toEqual([
-        'Family',
-        'Personal',
-        'Work',
+      expect(mockJson).toHaveBeenCalledWith([
+        'calendar',
+        'calendars',
+        'list',
+        '--json',
       ]);
-      // Sorted alphabetically; id mirrors the calendar name.
-      expect(result.map((c) => c.id)).toEqual(['Family', 'Personal', 'Work']);
+      expect(result).toEqual([
+        {
+          id: 'calendar-work',
+          title: 'Work',
+          color: '#FF0000',
+          allowsContentModifications: true,
+          isImmutable: false,
+        },
+        {
+          id: 'calendar-birthdays',
+          title: 'Birthdays',
+          color: undefined,
+          allowsContentModifications: false,
+          isImmutable: true,
+        },
+      ]);
     });
 
     it('returns an empty array when no events exist in the window', async () => {
@@ -176,22 +209,51 @@ describe('CalendarRepository (event CLI backend)', () => {
   describe('findCalendars', () => {
     it('delegates to findAllCalendars when no date range is given', async () => {
       mockJson.mockResolvedValueOnce([
-        eventFixture({ id: 'a', calendar: 'Work' }),
+        {
+          id: 'calendar-work',
+          title: 'Work',
+          color: null,
+          allowsContentModifications: true,
+          isImmutable: false,
+        },
       ]);
 
       const result = await calendarRepository.findCalendars({});
 
-      expect(result).toEqual([{ id: 'Work', title: 'Work' }]);
+      expect(result).toEqual([
+        {
+          id: 'calendar-work',
+          title: 'Work',
+          color: undefined,
+          allowsContentModifications: true,
+          isImmutable: false,
+        },
+      ]);
     });
 
-    it('scopes the listing to the given date range and counts events per calendar title', async () => {
-      // `event` has no EventKit calendar identifiers or account info, so
-      // counts are grouped by the `calendar` title field on each event.
-      mockJson.mockResolvedValueOnce([
-        eventFixture({ id: 'event-1', calendar: 'Work' }),
-        eventFixture({ id: 'event-2', calendar: 'Work' }),
-        eventFixture({ id: 'event-3', calendar: 'Personal' }),
-      ]);
+    it('scopes the listing and counts events by stable calendar ID', async () => {
+      mockJson
+        .mockResolvedValueOnce([
+          eventFixture({ id: 'event-1', calendarId: 'calendar-work' }),
+          eventFixture({ id: 'event-2', calendarId: 'calendar-work' }),
+          eventFixture({ id: 'event-3', calendarId: 'calendar-personal' }),
+        ])
+        .mockResolvedValueOnce([
+          {
+            id: 'calendar-personal',
+            title: 'Personal',
+            color: null,
+            allowsContentModifications: true,
+            isImmutable: false,
+          },
+          {
+            id: 'calendar-work',
+            title: 'Work',
+            color: null,
+            allowsContentModifications: true,
+            isImmutable: false,
+          },
+        ]);
 
       const result = await calendarRepository.findCalendars({
         startDate: '2026-05-04',
@@ -202,37 +264,75 @@ describe('CalendarRepository (event CLI backend)', () => {
       expect(args[args.indexOf('--start') + 1]).toBe('2026-05-04');
       expect(args[args.indexOf('--end') + 1]).toBe('2026-05-11');
       expect(result).toEqual([
-        { id: 'Personal', title: 'Personal', eventCount: 1 },
-        { id: 'Work', title: 'Work', eventCount: 2 },
+        {
+          id: 'calendar-personal',
+          title: 'Personal',
+          color: undefined,
+          allowsContentModifications: true,
+          isImmutable: false,
+          eventCount: 1,
+        },
+        {
+          id: 'calendar-work',
+          title: 'Work',
+          color: undefined,
+          allowsContentModifications: true,
+          isImmutable: false,
+          eventCount: 2,
+        },
       ]);
     });
 
-    it('omits calendars with zero events in the scoped window', async () => {
-      mockJson.mockResolvedValueOnce([]);
+    it('retains writable calendars with zero events in the scoped window', async () => {
+      mockJson.mockResolvedValueOnce([]).mockResolvedValueOnce([
+        {
+          id: 'calendar-empty',
+          title: 'Empty',
+          color: null,
+          allowsContentModifications: true,
+          isImmutable: false,
+        },
+      ]);
 
       const result = await calendarRepository.findCalendars({
         startDate: '2026-05-04',
         endDate: '2026-05-11',
       });
 
-      expect(result).toEqual([]);
+      expect(result).toEqual([
+        {
+          id: 'calendar-empty',
+          title: 'Empty',
+          color: undefined,
+          allowsContentModifications: true,
+          isImmutable: false,
+          eventCount: 0,
+        },
+      ]);
     });
   });
 
   describe('createEvent', () => {
-    it('passes only the event-supported flag subset', async () => {
-      mockJson.mockResolvedValueOnce(eventFixture({ id: 'created' }));
+    it('routes the exact calendar ID through the separate create helper', async () => {
+      mockCreate.mockResolvedValueOnce({
+        created: true,
+        id: 'created',
+        title: 'New event',
+        calendar: 'Work',
+        calendarId: 'calendar-work',
+        isAllDay: false,
+      });
 
       await calendarRepository.createEvent({
         title: 'New event',
         startDate: '2025-11-04 09:00:00',
         endDate: '2025-11-04 10:00:00',
-        calendar: 'Work',
+        calendarId: 'calendar-work',
         notes: 'agenda',
         location: 'HQ',
       });
 
-      expect(mockJson).toHaveBeenCalledWith([
+      expect(mockCreate).toHaveBeenCalledWith([
         'calendar',
         'create',
         '--title',
@@ -241,43 +341,59 @@ describe('CalendarRepository (event CLI backend)', () => {
         '2025-11-04 09:00:00',
         '--end',
         '2025-11-04 10:00:00',
-        '--calendar',
-        'Work',
+        '--calendar-id',
+        'calendar-work',
         '--notes',
         'agenda',
         '--location',
         'HQ',
         '--json',
       ]);
+      expect(mockJson).not.toHaveBeenCalled();
     });
 
     it('preserves all-day formatting when callers pass bare YYYY-MM-DD', async () => {
-      mockJson.mockResolvedValueOnce(eventFixture({ id: 'created' }));
+      mockCreate.mockResolvedValueOnce({
+        created: true,
+        id: 'created',
+        title: 'All-day',
+        calendar: 'Work',
+        calendarId: 'calendar-work',
+        isAllDay: true,
+      });
 
       await calendarRepository.createEvent({
         title: 'All-day',
         startDate: '2025-11-04',
         endDate: '2025-11-05',
+        calendarId: 'calendar-work',
       });
 
-      const args = mockJson.mock.calls[0]![0];
+      const args = mockCreate.mock.calls[0]![0];
       expect(args[args.indexOf('--start') + 1]).toBe('2025-11-04');
       expect(args[args.indexOf('--end') + 1]).toBe('2025-11-05');
     });
 
-    it('passes --timezone when provided', async () => {
-      mockJson.mockResolvedValueOnce(eventFixture({ id: 'created' }));
+    it('has no target-name or default-calendar fallback', async () => {
+      mockCreate.mockResolvedValueOnce({
+        created: true,
+        id: 'created',
+        title: 'Timed event',
+        calendar: 'Work',
+        calendarId: 'calendar-work',
+        isAllDay: false,
+      });
 
       await calendarRepository.createEvent({
         title: 'Timed event',
         startDate: '2025-11-04 09:00:00',
         endDate: '2025-11-04 10:00:00',
-        timeZone: 'America/New_York',
+        calendarId: 'calendar-work',
       });
 
-      const args = mockJson.mock.calls[0]![0];
-      expect(args).toContain('--timezone');
-      expect(args[args.indexOf('--timezone') + 1]).toBe('America/New_York');
+      const args = mockCreate.mock.calls[0]![0];
+      expect(args).toContain('--calendar-id');
+      expect(args).not.toContain('--calendar');
     });
   });
 

@@ -3,6 +3,7 @@
  * Tests for binary validation utilities
  */
 
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import {
   BinaryValidationError,
@@ -12,8 +13,10 @@ import {
   validateBinaryIntegrity,
   validateBinaryPath,
   validateBinarySecurity,
+  validateCodeSignature,
 } from './binaryValidator.js';
 
+jest.mock('node:child_process');
 jest.mock('node:fs');
 jest.mock('node:crypto', () => ({
   createHash: jest.fn(() => ({
@@ -23,10 +26,14 @@ jest.mock('node:crypto', () => ({
 }));
 
 const mockFs = fs as jest.Mocked<typeof fs>;
+const mockExecFileSync = execFileSync as jest.MockedFunction<
+  typeof execFileSync
+>;
 
 describe('binaryValidator', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockExecFileSync.mockReturnValue(Buffer.from(''));
   });
 
   describe('BinaryValidationError', () => {
@@ -150,6 +157,18 @@ describe('binaryValidator', () => {
       );
     });
 
+    it('rejects symbolic links when strict native-helper validation is enabled', () => {
+      const binaryPath = '/project/dist/swift/bin/EventKitCLI';
+      mockFs.existsSync.mockReturnValue(true);
+      mockFs.lstatSync.mockReturnValue({
+        isSymbolicLink: () => true,
+      } as fs.Stats);
+
+      expect(() =>
+        validateBinaryPath(binaryPath, { rejectSymbolicLinks: true }),
+      ).toThrow('Binary path must not be a symbolic link');
+    });
+
     it('should throw error when file is too large', () => {
       const binaryPath = '/project/dist/swift/bin/EventKitCLI';
 
@@ -241,6 +260,24 @@ describe('binaryValidator', () => {
       expect(() => calculateBinaryHash(binaryPath)).toThrow(
         'Failed to calculate binary hash',
       );
+    });
+  });
+
+  describe('validateCodeSignature', () => {
+    it('uses the absolute macOS verifier with strict validation', () => {
+      expect(validateCodeSignature('/project/bin/EventKitCLI')).toBe(true);
+      expect(mockExecFileSync).toHaveBeenCalledWith(
+        '/usr/bin/codesign',
+        ['--verify', '--strict', '--verbose=2', '/project/bin/EventKitCLI'],
+        { stdio: 'ignore' },
+      );
+    });
+
+    it('fails closed when codesign rejects the binary', () => {
+      mockExecFileSync.mockImplementation(() => {
+        throw new Error('invalid signature');
+      });
+      expect(validateCodeSignature('/project/bin/EventKitCLI')).toBe(false);
     });
   });
 
@@ -464,29 +501,30 @@ describe('binaryValidator', () => {
 
       const config = getEnvironmentBinaryConfig();
 
-      expect(config.maxFileSize).toBe(100 * 1024 * 1024);
+      expect(config.maxFileSize).toBe(10 * 1024 * 1024);
       expect(config.requireAbsolutePath).toBeUndefined();
+      expect(config.rejectSymbolicLinks).toBe(true);
+      expect(config.requireValidCodeSignature).toBe(true);
     });
 
     it('should return production config by default', () => {
       process.env.NODE_ENV = 'production';
-      process.env.SWIFT_BINARY_HASH = 'prod-hash-value';
-
       const config = getEnvironmentBinaryConfig();
 
-      expect(config.expectedHash).toBe('prod-hash-value');
-      expect(config.maxFileSize).toBe(80 * 1024 * 1024);
+      expect(config.expectedHash).toBeUndefined();
+      expect(config.maxFileSize).toBe(10 * 1024 * 1024);
       expect(config.requireAbsolutePath).toBe(true);
+      expect(config.rejectSymbolicLinks).toBe(true);
+      expect(config.requireValidCodeSignature).toBe(true);
     });
 
-    it('should handle missing SWIFT_BINARY_HASH in production', () => {
+    it('leaves hash selection to the per-binary caller', () => {
       process.env.NODE_ENV = 'production';
-      delete process.env.SWIFT_BINARY_HASH;
 
       const config = getEnvironmentBinaryConfig();
 
       expect(config.expectedHash).toBeUndefined();
-      expect(config.maxFileSize).toBe(80 * 1024 * 1024);
+      expect(config.maxFileSize).toBe(10 * 1024 * 1024);
     });
   });
 });

@@ -13,15 +13,25 @@ export const FILE_SYSTEM = {
   /** Package.json filename for project root detection */
   PACKAGE_JSON_FILENAME: 'package.json',
 
-  /** Swift binary filename — points at the vendored `event` CLI (FradSer/event). */
-  SWIFT_BINARY_NAME: 'event',
+  /** Package name used to distinguish this repository from an ancestor. */
+  PROJECT_PACKAGE_NAME: 'mcp-server-eventkit',
+
+  /** Repository-owned, read-only EventKit helper filename. */
+  SWIFT_BINARY_NAME: 'eventkit-read-helper',
+
+  /** Create-only EventKit helper filename. */
+  CALENDAR_CREATE_BINARY_NAME: 'eventkit-calendar-create-helper',
 
   /**
    * TCC disclaim shim filename — spawns `event` as its own TCC-responsible
    * process so EventKit permission prompts work from desktop MCP clients
    * that lack usage-description strings (issue #93).
    */
-  DISCLAIM_BINARY_NAME: 'event-disclaim',
+  DISCLAIM_BINARY_NAME: 'eventkit-read-helper-disclaim',
+
+  /** TCC responsibility shim for the create-only helper. */
+  CALENDAR_CREATE_DISCLAIM_BINARY_NAME:
+    'eventkit-calendar-create-helper-disclaim',
 } as const;
 
 /**
@@ -35,22 +45,6 @@ export const VALIDATION = {
   MAX_SEARCH_LENGTH: 100,
   MAX_URL_LENGTH: 500,
   MAX_LOCATION_LENGTH: 200,
-} as const;
-
-/**
- * Tool names for MCP server operations
- */
-export const TOOLS = {
-  /** Reminder tasks management tool */
-  REMINDERS_TASKS: 'reminders_tasks',
-  /** Reminder lists management tool */
-  REMINDERS_LISTS: 'reminders_lists',
-  /** Reminder subtasks management tool */
-  REMINDERS_SUBTASKS: 'reminders_subtasks',
-  /** Calendar events management tool */
-  CALENDAR_EVENTS: 'calendar_events',
-  /** Calendar collections management tool */
-  CALENDAR_CALENDARS: 'calendar_calendars',
 } as const;
 
 /**
@@ -85,7 +79,5 @@ export const TIME = {
 export const MESSAGES = {
   ERROR: {
     UNKNOWN_TOOL: (name: string) => `Unknown tool: ${name}`,
-    UNKNOWN_ACTION: (tool: string, action: string) =>
-      `Unknown ${tool} action: ${action}`,
   },
 } as const;
