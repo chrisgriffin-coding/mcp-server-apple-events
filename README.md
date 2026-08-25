@@ -115,10 +115,10 @@ node scripts/launch-codex-plugin.mjs
 The last command starts the stdio server and waits for MCP input; press
 Control-C after confirming that it starts without an integrity or signature
 error. Add `apple-eventkit` to a trusted local Codex marketplace only after
-these checks. The plugin bundle is self-contained because Codex deliberately
-excludes `node_modules` from installed plugin snapshots. Rebuild and reinstall
-the plugin whenever its server, launcher, dependencies, or native helpers
-change so the installed snapshot stays in sync.
+these checks. The plugin bundle is self-contained because installed snapshots
+do not preserve a directly runnable pnpm `node_modules` layout. Rebuild and
+reinstall the plugin whenever its server, launcher, dependencies, or native
+helpers change so the installed snapshot stays in sync.
 
 ## Planned additional write support
 
