@@ -83,6 +83,41 @@ After building, configure a local stdio MCP client with an absolute path and the
 
 Keep client approval enabled. Do not use an unreviewed npm or `npx` package in place of this local checkout.
 
+## Codex plugin
+
+This repository is also a local Codex plugin. Its MCP configuration starts a
+repository-owned launcher, which reads the four signed-binary hashes from the
+build outputs instead of duplicating machine-specific hashes in plugin
+configuration. Codex is configured to prompt for non-read-only tools; the
+server still independently requires `confirmed: true` for event creation.
+
+Prepare the exact source directory that the local marketplace will snapshot:
+
+```bash
+git clone git@github.com:chrisgriffin-coding/mcp-server-apple-events.git ~/plugins/apple-eventkit
+cd ~/plugins/apple-eventkit
+pnpm install --ignore-scripts --frozen-lockfile
+pnpm exec tsc --noEmit --project tsconfig.json
+pnpm test --runInBand
+pnpm exec biome check .
+pnpm run build:ts
+```
+
+Review both Swift helpers and the signing identity, then explicitly build the
+native binaries:
+
+```bash
+pnpm run build:helper
+node scripts/launch-codex-plugin.mjs
+```
+
+The last command starts the stdio server and waits for MCP input; press
+Control-C after confirming that it starts without an integrity or signature
+error. Add `apple-eventkit` to a trusted local Codex marketplace only after
+these checks. Rebuild and reinstall the plugin whenever its server, launcher,
+dependencies, or native helpers change so the installed snapshot stays in
+sync.
+
 ## Planned additional write support
 
 Writes will not be added to the read helper. Each mutation will use a separately named MCP tool and narrowly scoped native write helper so a client can distinguish and approve it:

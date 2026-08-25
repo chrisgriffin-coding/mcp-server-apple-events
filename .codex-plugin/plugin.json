@@ -1,0 +1,27 @@
+{
+  "name": "apple-eventkit",
+  "version": "0.1.0",
+  "description": "Local, security-focused Apple Calendar and Reminders access through EventKit.",
+  "author": {
+    "name": "Chris Griffin",
+    "url": "https://github.com/chrisgriffin-coding"
+  },
+  "homepage": "https://github.com/chrisgriffin-coding/mcp-server-apple-events#readme",
+  "repository": "https://github.com/chrisgriffin-coding/mcp-server-apple-events",
+  "license": "MIT",
+  "keywords": ["apple-calendar", "eventkit", "mcp", "reminders"],
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Apple EventKit",
+    "shortDescription": "Use Apple Calendar and Reminders locally.",
+    "longDescription": "Read Calendar and Reminders data and create explicitly confirmed events in a selected writable calendar. EventKit access remains on this Mac.",
+    "developerName": "Chris Griffin",
+    "category": "Productivity",
+    "capabilities": ["Read", "Write"],
+    "defaultPrompt": [
+      "Show my calendars and their stable IDs.",
+      "Read my upcoming calendar events.",
+      "Create an event after I approve its exact details."
+    ]
+  }
+}
