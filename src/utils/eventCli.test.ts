@@ -19,6 +19,7 @@ import {
   executeCalendarCreateCliJson,
   executeEventCliJson,
   executeEventCliPlain,
+  executeReminderCreateCliJson,
 } from './eventCli.js';
 import { findProjectRoot } from './projectUtils.js';
 
@@ -91,6 +92,8 @@ describe('eventCli', () => {
     process.env.EVENTKIT_DISCLAIM_SHA256 = 'b'.repeat(64);
     process.env.EVENTKIT_CREATE_HELPER_SHA256 = 'c'.repeat(64);
     process.env.EVENTKIT_CREATE_DISCLAIM_SHA256 = 'd'.repeat(64);
+    process.env.EVENTKIT_REMINDER_CREATE_HELPER_SHA256 = 'e'.repeat(64);
+    process.env.EVENTKIT_REMINDER_CREATE_DISCLAIM_SHA256 = 'f'.repeat(64);
     // Hermetic: a developer's shell-exported EVENTKIT_CLI_TIMEOUT_MS must
     // not change the expected default in assertions below.
     delete process.env.EVENTKIT_CLI_TIMEOUT_MS;
@@ -101,6 +104,8 @@ describe('eventCli', () => {
     delete process.env.EVENTKIT_DISCLAIM_SHA256;
     delete process.env.EVENTKIT_CREATE_HELPER_SHA256;
     delete process.env.EVENTKIT_CREATE_DISCLAIM_SHA256;
+    delete process.env.EVENTKIT_REMINDER_CREATE_HELPER_SHA256;
+    delete process.env.EVENTKIT_REMINDER_CREATE_DISCLAIM_SHA256;
   });
 
   describe('executeEventCliJson — success', () => {
@@ -256,6 +261,82 @@ describe('eventCli', () => {
       const result = executeCalendarCreateCliJson(createArgs);
       await expect(result).rejects.toThrow(/may already have been created/);
       await expect(result).rejects.toThrow(/Do not retry automatically/);
+    });
+  });
+
+  describe('executeReminderCreateCliJson', () => {
+    const createArgs = [
+      'reminder',
+      'create',
+      '--list-id',
+      'list-123',
+      '--title',
+      'Approved reminder',
+      '--json',
+    ];
+
+    it('uses the separately pinned reminder create-only helper and shim', async () => {
+      respondWith({
+        stdout: JSON.stringify({
+          created: true,
+          id: 'reminder-123',
+          title: 'Approved reminder',
+          list: 'Disposable',
+          reminderListId: 'list-123',
+          hasDueDate: false,
+          priority: 0,
+        }),
+      });
+
+      await executeReminderCreateCliJson(createArgs);
+
+      expect(mockExecFile).toHaveBeenCalledWith(
+        '/test/project/bin/eventkit-reminder-create-helper-disclaim',
+        ['/test/project/bin/eventkit-reminder-create-helper', ...createArgs],
+        {
+          maxBuffer: 10 * 1024 * 1024,
+          timeout: 30_000,
+          killSignal: 'SIGKILL',
+        },
+        expect.any(Function),
+      );
+      expect(
+        (
+          mockFindSecureBinaryPath.mock.calls[0]?.[1] as {
+            expectedHash: string;
+          }
+        ).expectedHash,
+      ).toBe('e'.repeat(64));
+      expect(
+        (
+          mockFindSecureBinaryPath.mock.calls[1]?.[1] as {
+            expectedHash: string;
+          }
+        ).expectedHash,
+      ).toBe('f'.repeat(64));
+    });
+
+    it('fails closed when the reminder create-helper hash is missing', async () => {
+      delete process.env.EVENTKIT_REMINDER_CREATE_HELPER_SHA256;
+
+      await expect(executeReminderCreateCliJson(createArgs)).rejects.toThrow(
+        /EVENTKIT_REMINDER_CREATE_HELPER_SHA256 is required/,
+      );
+      expect(mockExecFile).not.toHaveBeenCalled();
+    });
+
+    it('warns that a timed-out create may have committed and must not be retried automatically', async () => {
+      const timeoutError = Object.assign(new Error('Command failed'), {
+        killed: true,
+        signal: 'SIGKILL',
+      }) as ExecFileException;
+      respondWith({ stdout: '', stderr: '', error: timeoutError });
+
+      const result = executeReminderCreateCliJson(createArgs);
+      await expect(result).rejects.toThrow(
+        /reminder may already have been created/,
+      );
+      await expect(result).rejects.toThrow(/inspect the target reminder list/);
     });
   });
 

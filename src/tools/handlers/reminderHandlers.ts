@@ -184,16 +184,17 @@ export const handleCreateReminder = async (
       title: validatedArgs.title,
       notes: notesWithMetadata,
       url: validatedArgs.url,
-      list: validatedArgs.targetList,
+      reminderListId: validatedArgs.reminderListId,
       dueDate: validatedArgs.dueDate,
       priority: validatedArgs.priority,
     });
-    return formatSuccessMessage(
-      'created',
-      'reminder',
-      reminder.title,
-      reminder.id,
-    );
+    return [
+      'Successfully created exactly one reminder.',
+      `- Title (JSON): ${JSON.stringify(reminder.title)}`,
+      `- Target list (JSON): ${JSON.stringify(reminder.list)}`,
+      `- Target list ID: ${reminder.reminderListId}`,
+      `- Reminder ID: ${reminder.id ?? 'unavailable'}`,
+    ].join('\n');
   }, 'create reminder');
 };
 

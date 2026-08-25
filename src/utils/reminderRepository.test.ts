@@ -22,7 +22,11 @@ import {
   applyReminderFilters,
   prefilterReminderJsons,
 } from './dateFiltering.js';
-import { executeEventCliJson, executeEventCliPlain } from './eventCli.js';
+import {
+  executeEventCliJson,
+  executeEventCliPlain,
+  executeReminderCreateCliJson,
+} from './eventCli.js';
 import { reminderRepository } from './reminderRepository.js';
 
 jest.mock('./eventCli.js');
@@ -33,6 +37,9 @@ const mockJson = executeEventCliJson as jest.MockedFunction<
 >;
 const mockPlain = executeEventCliPlain as jest.MockedFunction<
   typeof executeEventCliPlain
+>;
+const mockReminderCreate = executeReminderCreateCliJson as jest.MockedFunction<
+  typeof executeReminderCreateCliJson
 >;
 const mockApplyReminderFilters = applyReminderFilters as jest.MockedFunction<
   typeof applyReminderFilters
@@ -382,25 +389,35 @@ describe('ReminderRepository (read-only EventKit helper backend)', () => {
   });
 
   describe('createReminder', () => {
-    it('passes only the event-supported flag subset', async () => {
-      mockJson.mockResolvedValueOnce(reminderFixture({ id: 'created' }));
+    const created = {
+      created: true as const,
+      id: 'created',
+      title: 'Buy milk',
+      list: 'Shopping',
+      reminderListId: 'list-shopping',
+      hasDueDate: true,
+      priority: 1,
+    };
+
+    it('passes only the create-helper-supported flag subset', async () => {
+      mockReminderCreate.mockResolvedValueOnce(created);
 
       await reminderRepository.createReminder({
         title: 'Buy milk',
-        list: 'Shopping',
+        reminderListId: 'list-shopping',
         notes: 'whole milk',
         url: 'https://example.com',
         dueDate: '2024-03-25 18:00:00',
         priority: 1,
       });
 
-      expect(mockJson).toHaveBeenCalledWith([
-        'reminders',
+      expect(mockReminderCreate).toHaveBeenCalledWith([
+        'reminder',
         'create',
+        '--list-id',
+        'list-shopping',
         '--title',
         'Buy milk',
-        '--list',
-        'Shopping',
         '--notes',
         'whole milk',
         '--url',
@@ -409,22 +426,30 @@ describe('ReminderRepository (read-only EventKit helper backend)', () => {
         '2024-03-25 18:00:00',
         '--priority',
         '1',
-        '--no-shortcuts',
         '--json',
       ]);
     });
 
     it('omits all optional flags when none are provided', async () => {
-      mockJson.mockResolvedValueOnce(reminderFixture({ id: 'created' }));
+      mockReminderCreate.mockResolvedValueOnce({
+        ...created,
+        title: 'Bare',
+        hasDueDate: false,
+        priority: 0,
+      });
 
-      await reminderRepository.createReminder({ title: 'Bare' });
+      await reminderRepository.createReminder({
+        title: 'Bare',
+        reminderListId: 'list-shopping',
+      });
 
-      expect(mockJson).toHaveBeenCalledWith([
-        'reminders',
+      expect(mockReminderCreate).toHaveBeenCalledWith([
+        'reminder',
         'create',
+        '--list-id',
+        'list-shopping',
         '--title',
         'Bare',
-        '--no-shortcuts',
         '--json',
       ]);
     });

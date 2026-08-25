@@ -60,6 +60,35 @@ describe('repository-owned calendar create helper', () => {
   });
 });
 
+describe('repository-owned reminder create helper', () => {
+  const source = readProjectFile(
+    'native/EventKitReminderCreateHelper/main.swift',
+  );
+
+  it('implements exactly one create command selected by stable reminder-list ID', () => {
+    expect(source).toContain('["reminder", "create"]');
+    expect(source).toContain('"--list-id"');
+    expect(source).toContain('calendar(withIdentifier: reminderListID)');
+    expect(source).toContain('eventStore.save(reminder, commit: true)');
+  });
+
+  it('cannot list, update, complete, or delete reminders and has no adjacent integration clients', () => {
+    expect(source).not.toMatch(/fetchReminders|predicateForReminders/);
+    expect(source).not.toMatch(
+      /eventStore\.(remove|commit|reset|refresh)\s*\(/,
+    );
+    expect(source).not.toMatch(
+      /URLSession|NWConnection|SQLite3|SQLiteConnection|NSAppleScript|Process\s*\(/,
+    );
+  });
+
+  it('requires full Reminders access only to resolve a specific list', () => {
+    expect(source).toContain('requestFullAccessToReminders');
+    expect(source).not.toContain('requestFullAccessToEvents');
+    expect(source).not.toContain('requestWriteOnlyAccess');
+  });
+});
+
 describe('read-only helper build pipeline', () => {
   const buildScript = readProjectFile('scripts/build-helper.mjs');
   const infoPlist = readProjectFile('scripts/helper-Info.plist');
@@ -68,12 +97,19 @@ describe('read-only helper build pipeline', () => {
   const createEntitlements = readProjectFile(
     'scripts/create-helper.entitlements',
   );
+  const reminderCreateInfoPlist = readProjectFile(
+    'scripts/reminder-create-helper-Info.plist',
+  );
+  const reminderCreateEntitlements = readProjectFile(
+    'scripts/reminder-create-helper.entitlements',
+  );
 
   it('compiles local Swift source directly with no SwiftPM or remote fetch', () => {
     expect(buildScript).toContain("'swiftc'");
     expect(buildScript).toContain("'native'");
     expect(buildScript).toContain("'EventKitReadHelper'");
     expect(buildScript).toContain("'EventKitCalendarCreateHelper'");
+    expect(buildScript).toContain("'EventKitReminderCreateHelper'");
     expect(buildScript).not.toMatch(/swift[\s\S]*?'build'/);
     expect(buildScript).not.toMatch(/vendor[\s\S]{0,40}event/);
     expect(buildScript).not.toMatch(/GIT_CONFIG|git@github|https:\/\/github/);
@@ -98,6 +134,8 @@ describe('read-only helper build pipeline', () => {
     expect(buildScript).toContain('EVENTKIT_DISCLAIM_SHA256=');
     expect(buildScript).toContain('EVENTKIT_CREATE_HELPER_SHA256=');
     expect(buildScript).toContain('EVENTKIT_CREATE_DISCLAIM_SHA256=');
+    expect(buildScript).toContain('EVENTKIT_REMINDER_CREATE_HELPER_SHA256=');
+    expect(buildScript).toContain('EVENTKIT_REMINDER_CREATE_DISCLAIM_SHA256=');
     expect(buildScript).toContain('fails closed');
   });
 
@@ -114,6 +152,23 @@ describe('read-only helper build pipeline', () => {
       'com.apple.security.personal-information.reminders',
     );
     expect(createEntitlements.match(/<key>/g)).toHaveLength(1);
+  });
+
+  it('gives the reminder create helper only Reminders entitlement and an exact-list purpose string', () => {
+    expect(reminderCreateInfoPlist).toContain(
+      'NSRemindersFullAccessUsageDescription',
+    );
+    expect(reminderCreateInfoPlist).toContain(
+      'select an exact writable list by ID',
+    );
+    expect(reminderCreateInfoPlist).not.toContain('NSCalendars');
+    expect(reminderCreateEntitlements).toContain(
+      'com.apple.security.personal-information.reminders',
+    );
+    expect(reminderCreateEntitlements).not.toContain(
+      'com.apple.security.personal-information.calendars',
+    );
+    expect(reminderCreateEntitlements.match(/<key>/g)).toHaveLength(1);
   });
 
   it('embeds read-only purpose strings and no write-only usage descriptions', () => {

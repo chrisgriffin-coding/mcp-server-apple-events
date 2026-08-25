@@ -80,6 +80,7 @@ describe('Server Module', () => {
         }
       ).instructions;
       expect(instructions).toContain('calendar_event_create');
+      expect(instructions).toContain('reminder_create');
       expect(instructions).toContain('non-idempotent');
       expect(instructions).toContain('No update');
       expect(instructions).toContain('untrusted');

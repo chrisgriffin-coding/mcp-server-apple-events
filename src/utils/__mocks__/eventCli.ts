@@ -2,4 +2,5 @@
 
 export const executeEventCliJson = jest.fn();
 export const executeCalendarCreateCliJson = jest.fn();
+export const executeReminderCreateCliJson = jest.fn();
 export const executeEventCliPlain = jest.fn();

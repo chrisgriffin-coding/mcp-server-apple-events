@@ -135,14 +135,24 @@ export interface EventJSON {
  * Data interfaces for repository methods
  */
 
-/** Fields accepted by `event reminders create`. */
+/** Fields accepted by the separate reminder create-only helper. */
 export interface CreateReminderData {
   title: string;
-  list?: string;
+  reminderListId: string;
   notes?: string;
   url?: string;
   dueDate?: string;
   priority?: number;
+}
+
+export interface CreatedReminderJSON {
+  created: true;
+  id: string | null;
+  title: string;
+  list: string;
+  reminderListId: string;
+  hasDueDate: boolean;
+  priority: number;
 }
 
 /** Fields accepted by `event reminders update`. */
@@ -210,7 +220,7 @@ export interface IReminderRepository {
     endDate?: string;
   }): Promise<Reminder[]>;
   findAllLists(): Promise<ReminderList[]>;
-  createReminder(data: CreateReminderData): Promise<ReminderJSON>;
+  createReminder(data: CreateReminderData): Promise<CreatedReminderJSON>;
   updateReminder(data: UpdateReminderData): Promise<ReminderJSON>;
   deleteReminder(id: string): Promise<void>;
   createReminderList(name: string): Promise<ReminderList>;

@@ -31,12 +31,18 @@
     "bin/eventkit-calendar-create-helper-disclaim",
     "bin/eventkit-calendar-create-helper.sha256",
     "bin/eventkit-calendar-create-helper-disclaim.sha256",
+    "bin/eventkit-reminder-create-helper",
+    "bin/eventkit-reminder-create-helper-disclaim",
+    "bin/eventkit-reminder-create-helper.sha256",
+    "bin/eventkit-reminder-create-helper-disclaim.sha256",
     "dist/",
     "scripts/build-helper.mjs",
     "scripts/helper-Info.plist",
     "scripts/helper.entitlements",
     "scripts/create-helper-Info.plist",
     "scripts/create-helper.entitlements",
+    "scripts/reminder-create-helper-Info.plist",
+    "scripts/reminder-create-helper.entitlements",
     "scripts/disclaim.c"
   ],
   "engines": {

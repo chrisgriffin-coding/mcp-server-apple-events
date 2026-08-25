@@ -2,7 +2,7 @@
 
 ## Goal
 
-Allow a local MCP client to read Apple Calendar and Reminders data and, after explicit approval, create exactly one event in a specifically selected writable calendar.
+Allow a local MCP client to read Apple Calendar and Reminders data and, after explicit approval, create exactly one event or reminder in a specifically selected writable target.
 
 ## Trust boundaries
 
@@ -12,26 +12,28 @@ MCP client / model
         | untrusted JSON-RPC tool call
         v
 TypeScript MCP server
-  - advertises five reads and one create tool
+  - advertises five reads and two create tools
   - rejects extra create properties at runtime
   - forces the action implied by each independent tool name
         |
         +-- argv, no shell --> read helper --> Calendar / Reminders reads
         |
-        +-- argv, no shell --> create helper --> one Calendar save
+        +-- argv, no shell --> event-create helper --> one Calendar save
+        |
+        +-- argv, no shell --> reminder-create helper --> one Reminders save
 ```
 
 Calendar event fields, reminder fields, URLs, attendee data, list names, notes, and native-helper output are untrusted content. They may contain prompt-injection text. They are data to summarize or display, never instructions to invoke another tool, run code, reveal secrets, or change approval policy.
 
 ## Initial controls
 
-- The server advertises no prompt capability and only one mutation tool: `calendar_event_create`.
+- The server advertises no prompt capability and only two mutation tools: `calendar_event_create` and `reminder_create`.
 - Read operations use separate tool names rather than an `action` discriminator.
-- Each advertised schema sets `additionalProperties: false`. The create schema is strict at runtime, requires `confirmed: true`, and accepts only title, dates, stable calendar ID, notes, and location.
+- Each advertised schema sets `additionalProperties: false`. Both create schemas are strict at runtime, require `confirmed: true`, and accept only their documented fields and one stable target ID.
 - The router places its internal read/create action after caller arguments so a forged action cannot override the independently named route.
 - Tool-name dispatch checks own properties, preventing prototype-chain names such as `toString` from becoming routes.
 - The native process is launched with `execFile` and an argv array, not through a shell.
-- Both helpers and both TCC shims are constrained to exact repository `bin/` paths, reject symbolic links, require valid code signatures, and require separate exact SHA-256 environment pins.
+- All three helpers and three TCC shims are constrained to exact repository `bin/` paths, reject symbolic links, require valid code signatures, and require separate exact SHA-256 environment pins.
 - Native calls have a finite timeout and output-size cap.
 - Runtime dependencies are exact-version pinned in both the manifest and lockfile.
 - The project is private and is not published to npm during hardening.
@@ -46,9 +48,13 @@ Apple does not provide read-only Reminders authorization, so the helper receives
 
 EventKit write-only authorization does not expose real calendar metadata, so it cannot reliably select a requested calendar. The create helper therefore has full Calendar permission, resolves only the caller-supplied stable calendar ID, verifies that calendar is writable and event-capable, and exposes only one save command. A compromise of that binary would nevertheless inherit full Calendar access.
 
+### Full Reminders permission for specific-list creation
+
+Selecting a specifically requested reminder list by stable EventKit ID requires access to list metadata. The reminder-create helper therefore has full Reminders permission, resolves only the caller-supplied ID, verifies the list is writable and reminder-capable, and exposes only one save command. A compromise of that binary would nevertheless inherit full Reminders access.
+
 ### Retry ambiguity
 
-Calendar creation is not idempotent. The server never retries it automatically. If the helper times out, the response says the event may already exist and requires inspecting Calendar before any retry. Concurrent or manual duplicate calls can still create duplicate events.
+Calendar and reminder creation are not idempotent. The server never retries them automatically. If a helper times out, the response says the item may already exist and requires inspecting the exact target before any retry. Concurrent or manual duplicate calls can still create duplicates.
 
 ### Supply chain
 
@@ -64,7 +70,7 @@ MCP annotations and descriptions are guidance, not a security boundary. The clie
 
 ## Additional write-support release gates
 
-The calendar-create tool implements the applicable controls below. Every additional write tool must independently satisfy them:
+Both create tools implement the applicable controls below. Every additional write tool must independently satisfy them:
 
 1. Give each mutation a separate tool name; never restore mixed read/write action routing.
 2. Require stable EventKit IDs for update, completion, and deletion.
@@ -81,4 +87,4 @@ The calendar-create tool implements the applicable controls below. Every additio
 - Multi-user operation
 - npm publication
 - Automatic background synchronization
-- Reminder creation, all updates, deletions, completion, recurrence, attendee, alarm, URL, and availability changes
+- All updates, deletions, completion, recurrence, attendee, alarm, and availability changes

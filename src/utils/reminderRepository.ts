@@ -9,6 +9,7 @@
 import type { Reminder, ReminderList } from '../types/index.js';
 import type {
   AlarmJSON,
+  CreatedReminderJSON,
   CreateReminderData,
   IReminderRepository,
   ListJSON,
@@ -23,7 +24,11 @@ import {
 } from './dateFiltering.js';
 import { formatDateOnly, shiftDays, toDateOnly } from './dateUtils.js';
 import { CliUserError } from './errorHandling.js';
-import { executeEventCliJson, executeEventCliPlain } from './eventCli.js';
+import {
+  executeEventCliJson,
+  executeEventCliPlain,
+  executeReminderCreateCliJson,
+} from './eventCli.js';
 import {
   addOptionalArg,
   addOptionalNumberArg,
@@ -285,17 +290,21 @@ class ReminderRepository implements IReminderRepository {
     return lists.map(mapList);
   }
 
-  async createReminder(data: CreateReminderData): Promise<ReminderJSON> {
-    const args = ['reminders', 'create', '--title', data.title];
-    addOptionalArg(args, '--list', data.list);
+  async createReminder(data: CreateReminderData): Promise<CreatedReminderJSON> {
+    const args = [
+      'reminder',
+      'create',
+      '--list-id',
+      data.reminderListId,
+      '--title',
+      data.title,
+    ];
     addOptionalArg(args, '--notes', data.notes);
     addOptionalArg(args, '--url', data.url);
     addOptionalArg(args, '--due', data.dueDate);
     addOptionalNumberArg(args, '--priority', data.priority);
-    // Skip the AdvancedReminderEdit Shortcut path — tags / subtasks live in
-    // the notes field (see tagUtils / subtaskUtils).
-    args.push('--no-shortcuts', '--json');
-    return executeEventCliJson<ReminderJSON>(args);
+    args.push('--json');
+    return executeReminderCreateCliJson<CreatedReminderJSON>(args);
   }
 
   async updateReminder(data: UpdateReminderData): Promise<ReminderJSON> {

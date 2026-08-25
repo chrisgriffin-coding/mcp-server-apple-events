@@ -48,13 +48,14 @@ describe('MCP protocol surface', () => {
       'reminders_read',
       'reminder_lists_read',
       'reminder_subtasks_read',
+      'reminder_create',
       'calendar_events_read',
       'calendars_read',
       'calendar_event_create',
     ]);
 
     for (const tool of result.tools.filter(
-      (tool) => tool.name !== 'calendar_event_create',
+      (tool) => !tool.name.endsWith('_create'),
     )) {
       expect(tool.annotations).toEqual(
         expect.objectContaining({
@@ -68,20 +69,19 @@ describe('MCP protocol surface', () => {
       expect(tool.inputSchema.properties).not.toHaveProperty('action');
     }
 
-    const create = result.tools.find(
-      (tool) => tool.name === 'calendar_event_create',
-    );
-    expect(create?.annotations).toEqual(
-      expect.objectContaining({
-        readOnlyHint: false,
-        destructiveHint: false,
-        idempotentHint: false,
-        openWorldHint: false,
-      }),
-    );
-    expect(create?.inputSchema.additionalProperties).toBe(false);
-    expect(create?.inputSchema.properties).not.toHaveProperty('action');
-    expect(create?.inputSchema.properties).not.toHaveProperty('targetCalendar');
+    for (const name of ['reminder_create', 'calendar_event_create']) {
+      const create = result.tools.find((tool) => tool.name === name);
+      expect(create?.annotations).toEqual(
+        expect.objectContaining({
+          readOnlyHint: false,
+          destructiveHint: false,
+          idempotentHint: false,
+          openWorldHint: false,
+        }),
+      );
+      expect(create?.inputSchema.additionalProperties).toBe(false);
+      expect(create?.inputSchema.properties).not.toHaveProperty('action');
+    }
   });
 
   it('rejects an unknown tool without launching EventKit', async () => {

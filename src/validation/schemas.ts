@@ -463,24 +463,40 @@ const SubtaskTitleSchema = createSafeTextSchema(
 
 const SubtaskTitleArraySchema = z.array(SubtaskTitleSchema).optional();
 
-/** Fields accepted by `event reminders create`. */
-const BaseReminderFields = {
-  title: SafeTextSchema,
-  dueDate: SafeDateSchema,
-  note: SafeNoteSchema,
-  url: SafeUrlSchema,
-  targetList: SafeListNameSchema,
-  priority: PriorityValueSchema,
-  tags: TagArraySchema,
-  subtasks: SubtaskTitleArraySchema,
-};
-
 export const SafeIdSchema = z.string().min(1, 'ID cannot be empty');
 
 /**
  * Tool-specific validation schemas
  */
-export const CreateReminderSchema = z.object(BaseReminderFields);
+const ReminderListIdSchema = z
+  .string()
+  .min(1, 'Reminder list ID is required')
+  .max(512, 'Reminder list ID cannot exceed 512 characters')
+  .regex(/^\S+$/u, 'Reminder list ID cannot contain whitespace');
+
+const ReminderTitleSchema = SafeTextSchema.regex(
+  /^[^\n\r\t]+$/u,
+  'Reminder title cannot contain line breaks or tabs',
+);
+
+export const CreateReminderSchema = z
+  .object({
+    title: ReminderTitleSchema,
+    reminderListId: ReminderListIdSchema,
+    dueDate: SafeDateSchema,
+    note: SafeNoteSchema,
+    url: SafeUrlSchema,
+    priority: PriorityValueSchema,
+    tags: TagArraySchema,
+    subtasks: SubtaskTitleArraySchema,
+    confirmed: z.literal(true, {
+      errorMap: () => ({
+        message:
+          'confirmed must be true after the user approves the exact reminder details',
+      }),
+    }),
+  })
+  .strict();
 
 export const ReadRemindersSchema = z
   .object({

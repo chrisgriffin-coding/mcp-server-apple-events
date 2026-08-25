@@ -358,6 +358,10 @@ _.seed
 /bin/eventkit-calendar-create-helper-disclaim
 /bin/eventkit-calendar-create-helper.sha256
 /bin/eventkit-calendar-create-helper-disclaim.sha256
+/bin/eventkit-reminder-create-helper
+/bin/eventkit-reminder-create-helper-disclaim
+/bin/eventkit-reminder-create-helper.sha256
+/bin/eventkit-reminder-create-helper-disclaim.sha256
 
 # Native helper compiler output
 /.build/eventkit-read-helper/

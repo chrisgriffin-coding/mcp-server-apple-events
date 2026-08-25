@@ -22,6 +22,9 @@ export const FILE_SYSTEM = {
   /** Create-only EventKit helper filename. */
   CALENDAR_CREATE_BINARY_NAME: 'eventkit-calendar-create-helper',
 
+  /** Reminder create-only EventKit helper filename. */
+  REMINDER_CREATE_BINARY_NAME: 'eventkit-reminder-create-helper',
+
   /**
    * TCC disclaim shim filename — spawns `event` as its own TCC-responsible
    * process so EventKit permission prompts work from desktop MCP clients
@@ -32,6 +35,10 @@ export const FILE_SYSTEM = {
   /** TCC responsibility shim for the create-only helper. */
   CALENDAR_CREATE_DISCLAIM_BINARY_NAME:
     'eventkit-calendar-create-helper-disclaim',
+
+  /** TCC responsibility shim for the reminder create-only helper. */
+  REMINDER_CREATE_DISCLAIM_BINARY_NAME:
+    'eventkit-reminder-create-helper-disclaim',
 } as const;
 
 /**

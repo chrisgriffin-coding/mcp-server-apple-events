@@ -188,36 +188,73 @@ describe('Tool Handlers', () => {
   describe('handleCreateReminder', () => {
     it('should return a Markdown success message with ID', async () => {
       const newReminder = {
+        created: true as const,
         id: 'rem-123',
         title: 'New Task',
-        isCompleted: false,
         list: 'Inbox',
-        notes: null,
-        url: null,
-        dueDate: null,
+        reminderListId: 'list-123',
+        hasDueDate: false,
         priority: 0,
-        locationTrigger: null,
       };
       mockReminderRepository.createReminder.mockResolvedValue(newReminder);
       const result = await handleCreateReminder({
         action: 'create',
         title: 'New Task',
+        reminderListId: 'list-123',
+        confirmed: true,
       });
       const content = getTextContent(result.content);
-      expect(content).toContain('Successfully created reminder "New Task"');
-      expect(content).toContain('- ID: rem-123');
+      expect(content).toContain('Successfully created exactly one reminder');
+      expect(content).toContain('- Title (JSON): "New Task"');
+      expect(content).toContain('- Target list (JSON): "Inbox"');
+      expect(content).toContain('- Target list ID: list-123');
+      expect(content).toContain('- Reminder ID: rem-123');
+      expect(mockReminderRepository.createReminder).toHaveBeenCalledWith({
+        title: 'New Task',
+        reminderListId: 'list-123',
+        notes: undefined,
+        url: undefined,
+        dueDate: undefined,
+        priority: undefined,
+      });
     });
 
     it('rejects invalid subtask titles during creation', async () => {
       const result = await handleCreateReminder({
         action: 'create',
         title: 'New Task',
+        reminderListId: 'list-123',
+        confirmed: true,
         subtasks: [''],
       });
 
       expect(result.isError).toBe(true);
       const content = getTextContent(result.content);
       expect(content).toContain('Input validation failed');
+    });
+
+    it('rejects creation without explicit confirmation', async () => {
+      const result = await handleCreateReminder({
+        action: 'create',
+        title: 'New Task',
+        reminderListId: 'list-123',
+      });
+
+      expect(result.isError).toBe(true);
+      expect(getTextContent(result.content)).toContain('confirmed');
+      expect(mockReminderRepository.createReminder).not.toHaveBeenCalled();
+    });
+
+    it('rejects a reminder-list display name fallback', async () => {
+      const result = await handleCreateReminder({
+        action: 'create',
+        title: 'New Task',
+        targetList: 'Inbox',
+        confirmed: true,
+      });
+
+      expect(result.isError).toBe(true);
+      expect(mockReminderRepository.createReminder).not.toHaveBeenCalled();
     });
   });
 

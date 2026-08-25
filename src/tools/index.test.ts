@@ -8,10 +8,12 @@ jest.mock('./handlers/index.js', () => ({
   handleReadCalendarEvents: jest.fn(),
   handleReadCalendars: jest.fn(),
   handleCreateCalendarEvent: jest.fn(),
+  handleCreateReminder: jest.fn(),
 }));
 
 import {
   handleCreateCalendarEvent,
+  handleCreateReminder,
   handleReadCalendarEvents,
   handleReadCalendars,
   handleReadReminderLists,
@@ -78,6 +80,24 @@ describe('tool routing', () => {
     await expect(
       handleToolCall('calendar_event_create', args),
     ).resolves.toEqual(success);
+    expect(mockedHandler).toHaveBeenCalledWith({ ...args, action: 'create' });
+  });
+
+  it('routes reminder creation with a server-forced create action', async () => {
+    const mockedHandler = handleCreateReminder as jest.MockedFunction<
+      typeof handleCreateReminder
+    >;
+    mockedHandler.mockResolvedValue(success);
+    const args = {
+      action: 'delete',
+      title: 'Approved reminder',
+      reminderListId: 'list-123',
+      confirmed: true,
+    };
+
+    await expect(handleToolCall('reminder_create', args)).resolves.toEqual(
+      success,
+    );
     expect(mockedHandler).toHaveBeenCalledWith({ ...args, action: 'create' });
   });
 

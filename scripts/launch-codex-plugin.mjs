@@ -22,6 +22,10 @@ const requiredFiles = {
   createHelperHash: 'bin/eventkit-calendar-create-helper.sha256',
   createShim: 'bin/eventkit-calendar-create-helper-disclaim',
   createShimHash: 'bin/eventkit-calendar-create-helper-disclaim.sha256',
+  reminderCreateHelper: 'bin/eventkit-reminder-create-helper',
+  reminderCreateHelperHash: 'bin/eventkit-reminder-create-helper.sha256',
+  reminderCreateShim: 'bin/eventkit-reminder-create-helper-disclaim',
+  reminderCreateShimHash: 'bin/eventkit-reminder-create-helper-disclaim.sha256',
 };
 
 function absolute(relativePath) {
@@ -86,6 +90,12 @@ try {
       EVENTKIT_DISCLAIM_SHA256: readHash(requiredFiles.readShimHash),
       EVENTKIT_CREATE_HELPER_SHA256: readHash(requiredFiles.createHelperHash),
       EVENTKIT_CREATE_DISCLAIM_SHA256: readHash(requiredFiles.createShimHash),
+      EVENTKIT_REMINDER_CREATE_HELPER_SHA256: readHash(
+        requiredFiles.reminderCreateHelperHash,
+      ),
+      EVENTKIT_REMINDER_CREATE_DISCLAIM_SHA256: readHash(
+        requiredFiles.reminderCreateShimHash,
+      ),
     },
     stdio: 'inherit',
   });

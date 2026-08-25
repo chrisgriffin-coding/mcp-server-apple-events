@@ -286,6 +286,8 @@ export interface RemindersToolArgs extends BaseToolArgs {
   removeTags?: string[];
   subtasks?: string[];
   targetList?: string;
+  reminderListId?: string; // create only; exact stable ID from reminder_lists_read
+  confirmed?: boolean; // create only; must be true after client-side approval
   endDate?: string; // read only: due-date window end
 }
 

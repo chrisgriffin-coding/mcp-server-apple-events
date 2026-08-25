@@ -12,6 +12,10 @@ const CREATE_HELPER_IDENTIFIER =
   'com.chrisgriffin.mcp-server-eventkit.calendar-create-helper';
 const CREATE_DISCLAIM_IDENTIFIER =
   'com.chrisgriffin.mcp-server-eventkit.calendar-create-disclaim';
+const REMINDER_CREATE_HELPER_IDENTIFIER =
+  'com.chrisgriffin.mcp-server-eventkit.reminder-create-helper';
+const REMINDER_CREATE_DISCLAIM_IDENTIFIER =
+  'com.chrisgriffin.mcp-server-eventkit.reminder-create-disclaim';
 
 async function run(command, args, options = {}) {
   try {
@@ -94,6 +98,12 @@ async function main() {
     'EventKitCalendarCreateHelper',
     'main.swift',
   );
+  const reminderCreateSourceFile = path.join(
+    projectRoot,
+    'native',
+    'EventKitReminderCreateHelper',
+    'main.swift',
+  );
   const binDir = path.join(projectRoot, 'bin');
   const buildDir = path.join(projectRoot, '.build', 'eventkit-read-helper');
   const helperOutput = path.join(binDir, 'eventkit-read-helper');
@@ -105,6 +115,14 @@ async function main() {
   const createDisclaimOutput = path.join(
     binDir,
     'eventkit-calendar-create-helper-disclaim',
+  );
+  const reminderCreateHelperOutput = path.join(
+    binDir,
+    'eventkit-reminder-create-helper',
+  );
+  const reminderCreateDisclaimOutput = path.join(
+    binDir,
+    'eventkit-reminder-create-helper-disclaim',
   );
   const infoPlist = path.join(projectRoot, 'scripts', 'helper-Info.plist');
   const entitlements = path.join(projectRoot, 'scripts', 'helper.entitlements');
@@ -118,15 +136,28 @@ async function main() {
     'scripts',
     'create-helper.entitlements',
   );
+  const reminderCreateInfoPlist = path.join(
+    projectRoot,
+    'scripts',
+    'reminder-create-helper-Info.plist',
+  );
+  const reminderCreateEntitlements = path.join(
+    projectRoot,
+    'scripts',
+    'reminder-create-helper.entitlements',
+  );
   const disclaimSource = path.join(projectRoot, 'scripts', 'disclaim.c');
 
   await Promise.all([
     fs.access(sourceFile),
     fs.access(createSourceFile),
+    fs.access(reminderCreateSourceFile),
     fs.access(infoPlist),
     fs.access(entitlements),
     fs.access(createInfoPlist),
     fs.access(createEntitlements),
+    fs.access(reminderCreateInfoPlist),
+    fs.access(reminderCreateEntitlements),
     fs.access(disclaimSource),
   ]);
   await fs.rm(buildDir, { recursive: true, force: true });
@@ -208,6 +239,42 @@ async function main() {
     }),
   );
 
+  const reminderCreateSliceOutputs = await Promise.all(
+    slices.map(async ({ arch, target }) => {
+      const output = path.join(
+        buildDir,
+        `eventkit-reminder-create-helper-${arch}`,
+      );
+      const { stderr } = await run('xcrun', [
+        'swiftc',
+        '-O',
+        '-whole-module-optimization',
+        '-parse-as-library',
+        '-swift-version',
+        '6',
+        '-target',
+        target,
+        reminderCreateSourceFile,
+        '-framework',
+        'EventKit',
+        '-framework',
+        'CoreGraphics',
+        '-Xlinker',
+        '-sectcreate',
+        '-Xlinker',
+        '__TEXT',
+        '-Xlinker',
+        '__info_plist',
+        '-Xlinker',
+        reminderCreateInfoPlist,
+        '-o',
+        output,
+      ]);
+      if (stderr) console.warn(`${arch} reminder-create warnings:\n${stderr}`);
+      return output;
+    }),
+  );
+
   await run('xcrun', [
     'lipo',
     '-create',
@@ -221,6 +288,13 @@ async function main() {
     '-output',
     createHelperOutput,
     ...createSliceOutputs,
+  ]);
+  await run('xcrun', [
+    'lipo',
+    '-create',
+    '-output',
+    reminderCreateHelperOutput,
+    ...reminderCreateSliceOutputs,
   ]);
   await run('xcrun', [
     'clang',
@@ -243,6 +317,19 @@ async function main() {
     'arm64',
     '-arch',
     'x86_64',
+    '-DDISCLAIMER_NAME="eventkit-reminder-create-helper-disclaim"',
+    '-o',
+    reminderCreateDisclaimOutput,
+    disclaimSource,
+  ]);
+  await run('xcrun', [
+    'clang',
+    '-O2',
+    '-mmacosx-version-min=14.0',
+    '-arch',
+    'arm64',
+    '-arch',
+    'x86_64',
     '-DDISCLAIMER_NAME="eventkit-calendar-create-helper-disclaim"',
     '-o',
     createDisclaimOutput,
@@ -253,6 +340,8 @@ async function main() {
     fs.chmod(disclaimOutput, 0o755),
     fs.chmod(createHelperOutput, 0o755),
     fs.chmod(createDisclaimOutput, 0o755),
+    fs.chmod(reminderCreateHelperOutput, 0o755),
+    fs.chmod(reminderCreateDisclaimOutput, 0o755),
   ]);
 
   const signingIdentity = await resolveSigningIdentity();
@@ -281,14 +370,27 @@ async function main() {
     createEntitlements,
   ]);
   await sign(createDisclaimOutput, CREATE_DISCLAIM_IDENTIFIER);
+  await sign(reminderCreateHelperOutput, REMINDER_CREATE_HELPER_IDENTIFIER, [
+    '--entitlements',
+    reminderCreateEntitlements,
+  ]);
+  await sign(reminderCreateDisclaimOutput, REMINDER_CREATE_DISCLAIM_IDENTIFIER);
 
-  const [helperHash, disclaimHash, createHelperHash, createDisclaimHash] =
-    await Promise.all([
-      sha256(helperOutput),
-      sha256(disclaimOutput),
-      sha256(createHelperOutput),
-      sha256(createDisclaimOutput),
-    ]);
+  const [
+    helperHash,
+    disclaimHash,
+    createHelperHash,
+    createDisclaimHash,
+    reminderCreateHelperHash,
+    reminderCreateDisclaimHash,
+  ] = await Promise.all([
+    sha256(helperOutput),
+    sha256(disclaimOutput),
+    sha256(createHelperOutput),
+    sha256(createDisclaimOutput),
+    sha256(reminderCreateHelperOutput),
+    sha256(reminderCreateDisclaimOutput),
+  ]);
   await Promise.all([
     fs.writeFile(
       path.join(binDir, 'eventkit-read-helper.sha256'),
@@ -306,6 +408,16 @@ async function main() {
     fs.writeFile(`${createDisclaimOutput}.sha256`, `${createDisclaimHash}\n`, {
       mode: 0o644,
     }),
+    fs.writeFile(
+      `${reminderCreateHelperOutput}.sha256`,
+      `${reminderCreateHelperHash}\n`,
+      { mode: 0o644 },
+    ),
+    fs.writeFile(
+      `${reminderCreateDisclaimOutput}.sha256`,
+      `${reminderCreateDisclaimHash}\n`,
+      { mode: 0o644 },
+    ),
   ]);
 
   console.log('EventKit helper build complete.');
@@ -314,6 +426,12 @@ async function main() {
   console.log(`EVENTKIT_DISCLAIM_SHA256=${disclaimHash}`);
   console.log(`EVENTKIT_CREATE_HELPER_SHA256=${createHelperHash}`);
   console.log(`EVENTKIT_CREATE_DISCLAIM_SHA256=${createDisclaimHash}`);
+  console.log(
+    `EVENTKIT_REMINDER_CREATE_HELPER_SHA256=${reminderCreateHelperHash}`,
+  );
+  console.log(
+    `EVENTKIT_REMINDER_CREATE_DISCLAIM_SHA256=${reminderCreateDisclaimHash}`,
+  );
   console.log(
     'Each helper and shim hash is mandatory for its command path; the server fails closed if a required hash is absent or mismatched.',
   );

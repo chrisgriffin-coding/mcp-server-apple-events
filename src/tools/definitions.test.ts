@@ -6,6 +6,7 @@ describe('tool definitions', () => {
       'reminders_read',
       'reminder_lists_read',
       'reminder_subtasks_read',
+      'reminder_create',
       'calendar_events_read',
       'calendars_read',
       'calendar_event_create',
@@ -13,9 +14,7 @@ describe('tool definitions', () => {
   });
 
   it('marks each read tool as read-only, idempotent, and closed-world', () => {
-    for (const tool of TOOLS.filter(
-      (tool) => tool.name !== 'calendar_event_create',
-    )) {
+    for (const tool of TOOLS.filter((tool) => !tool.name.endsWith('_create'))) {
       expect(tool.annotations).toEqual(
         expect.objectContaining({
           readOnlyHint: true,
@@ -30,8 +29,14 @@ describe('tool definitions', () => {
     }
   });
 
-  it('marks event creation as non-read-only, non-destructive, and non-idempotent', () => {
-    const create = TOOLS.find((tool) => tool.name === 'calendar_event_create');
+  it.each([
+    [
+      'calendar_event_create',
+      ['title', 'startDate', 'endDate', 'calendarId', 'confirmed'],
+    ],
+    ['reminder_create', ['title', 'reminderListId', 'confirmed']],
+  ])('marks %s as non-read-only, non-destructive, and non-idempotent', (name, required) => {
+    const create = TOOLS.find((tool) => tool.name === name);
     expect(create?.annotations).toEqual(
       expect.objectContaining({
         readOnlyHint: false,
@@ -41,15 +46,30 @@ describe('tool definitions', () => {
       }),
     );
     expect(create?.inputSchema.additionalProperties).toBe(false);
-    expect(create?.inputSchema.required).toEqual([
+    expect(create?.inputSchema.required).toEqual(required);
+    expect(create?.inputSchema.properties).not.toHaveProperty('action');
+  });
+
+  it('requires exact IDs rather than display-name fallbacks for creation', () => {
+    const eventCreate = TOOLS.find(
+      (tool) => tool.name === 'calendar_event_create',
+    );
+    expect(eventCreate?.inputSchema.required).toEqual([
       'title',
       'startDate',
       'endDate',
       'calendarId',
       'confirmed',
     ]);
-    expect(create?.inputSchema.properties).not.toHaveProperty('action');
-    expect(create?.inputSchema.properties).not.toHaveProperty('targetCalendar');
+    expect(eventCreate?.inputSchema.properties).not.toHaveProperty(
+      'targetCalendar',
+    );
+    const reminderCreate = TOOLS.find(
+      (tool) => tool.name === 'reminder_create',
+    );
+    expect(reminderCreate?.inputSchema.properties).not.toHaveProperty(
+      'targetList',
+    );
   });
 
   it('does not expose action or mutation fields', () => {
@@ -67,9 +87,7 @@ describe('tool definitions', () => {
       'completed',
     ];
 
-    for (const tool of TOOLS.filter(
-      (tool) => tool.name !== 'calendar_event_create',
-    )) {
+    for (const tool of TOOLS.filter((tool) => !tool.name.endsWith('_create'))) {
       const properties = tool.inputSchema.properties ?? {};
       for (const property of forbidden) {
         expect(properties).not.toHaveProperty(property);

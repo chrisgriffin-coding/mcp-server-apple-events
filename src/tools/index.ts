@@ -17,6 +17,7 @@ import { MESSAGES } from '../utils/constants.js';
 import { TOOLS } from './definitions.js';
 import {
   handleCreateCalendarEvent,
+  handleCreateReminder,
   handleReadCalendarEvents,
   handleReadCalendars,
   handleReadReminderLists,
@@ -33,6 +34,11 @@ const TOOL_ROUTER_MAP = {
   reminder_lists_read: async () => handleReadReminderLists(),
   reminder_subtasks_read: async (args) =>
     handleReadSubtasks({ ...args, action: 'read' } as SubtasksToolArgs),
+  reminder_create: async (args) =>
+    handleCreateReminder({
+      ...args,
+      action: 'create',
+    } as RemindersToolArgs),
   calendar_events_read: async (args) =>
     handleReadCalendarEvents({ ...args, action: 'read' } as CalendarToolArgs),
   calendars_read: async (args) =>

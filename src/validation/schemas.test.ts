@@ -671,6 +671,8 @@ describe('ValidationSchemas', () => {
         expect(() =>
           CreateReminderSchema.parse({
             title: 'Tagged reminder',
+            reminderListId: 'list-1',
+            confirmed: true,
             tags: ['work', '#urgent'],
           }),
         ).not.toThrow();
@@ -680,6 +682,8 @@ describe('ValidationSchemas', () => {
         expect(() =>
           CreateReminderSchema.parse({
             title: 'CJK tagged reminder',
+            reminderListId: 'list-1',
+            confirmed: true,
             tags: ['雷蒙三十', '日本語', '한국어', '#中文_mix'],
           }),
         ).not.toThrow();
@@ -697,12 +701,16 @@ describe('ValidationSchemas', () => {
         expect(() =>
           CreateReminderSchema.parse({
             title: 'Bad tag',
+            reminderListId: 'list-1',
+            confirmed: true,
             tags: ['has space'],
           }),
         ).toThrow();
         expect(() =>
           CreateReminderSchema.parse({
             title: 'Bad tag',
+            reminderListId: 'list-1',
+            confirmed: true,
             tags: ['bad,comma'],
           }),
         ).toThrow();
@@ -756,13 +764,18 @@ describe('ValidationSchemas', () => {
           schema: CreateReminderSchema,
           validInput: {
             title: 'Test reminder',
+            reminderListId: 'list-1',
             dueDate: '2024-01-15',
             note: 'Test note',
             url: 'https://example.com',
-            targetList: 'Work',
+            confirmed: true,
           },
-          minimalInput: { title: 'Test reminder' },
-          requiredFields: ['title'],
+          minimalInput: {
+            title: 'Test reminder',
+            reminderListId: 'list-1',
+            confirmed: true,
+          },
+          requiredFields: ['title', 'reminderListId', 'confirmed'],
         },
         {
           name: 'UpdateReminderSchema',
@@ -818,43 +831,52 @@ describe('ValidationSchemas', () => {
       it('CreateReminderSchema keeps the fields event reminders create accepts', () => {
         const parsed = CreateReminderSchema.parse({
           title: 'Aligned reminder',
+          reminderListId: 'list-1',
           dueDate: '2024-01-15T10:00:00Z',
           note: 'short note',
           priority: 1,
-          targetList: 'Work',
           tags: ['urgent'],
           subtasks: ['Step 1'],
+          confirmed: true,
         }) as Record<string, unknown>;
 
         expect(parsed.title).toBe('Aligned reminder');
         expect(parsed.dueDate).toBe('2024-01-15T10:00:00Z');
         expect(parsed.priority).toBe(1);
+        expect(parsed.reminderListId).toBe('list-1');
         expect(parsed.tags).toEqual(['urgent']);
         expect(parsed.subtasks).toEqual(['Step 1']);
+        expect(parsed.confirmed).toBe(true);
       });
 
-      it('CreateReminderSchema silently strips dropped fields (alarms, recurrence, locationTrigger, startDate, location, completed)', () => {
-        const parsed = CreateReminderSchema.parse({
-          title: 'Trimmed',
-          alarms: [{ relativeOffset: -900 }],
-          recurrenceRules: [{ frequency: 'weekly', interval: 1 }],
-          locationTrigger: {
-            title: 'Office',
-            latitude: 1,
-            longitude: 2,
-            proximity: 'enter',
-          },
-          startDate: '2024-01-15T09:00:00Z',
-          location: 'Office',
-          completed: true,
-        }) as Record<string, unknown>;
+      it('CreateReminderSchema rejects unadvertised and legacy target fields', () => {
+        expect(() =>
+          CreateReminderSchema.parse({
+            title: 'Rejected',
+            reminderListId: 'list-1',
+            confirmed: true,
+            targetList: 'Work',
+          }),
+        ).toThrow();
+        expect(() =>
+          CreateReminderSchema.parse({
+            title: 'Rejected',
+            reminderListId: 'list-1',
+            confirmed: true,
+            action: 'delete',
+          }),
+        ).toThrow();
+      });
 
-        expect(parsed.alarms).toBeUndefined();
-        expect(parsed.recurrenceRules).toBeUndefined();
-        expect(parsed.locationTrigger).toBeUndefined();
-        expect(parsed.startDate).toBeUndefined();
-        expect(parsed.location).toBeUndefined();
-        expect(parsed.completed).toBeUndefined();
+      it('CreateReminderSchema requires exact user confirmation', () => {
+        const base = {
+          title: 'Approved reminder',
+          reminderListId: 'list-1',
+        };
+        expect(() => CreateReminderSchema.parse(base)).toThrow();
+        expect(() =>
+          CreateReminderSchema.parse({ ...base, confirmed: false }),
+        ).toThrow();
       });
 
       it('UpdateReminderSchema keeps start/due dates, priority, completed, tags', () => {

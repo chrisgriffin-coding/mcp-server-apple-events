@@ -50,5 +50,14 @@ describe('Codex plugin packaging', () => {
     expect(launcher).toContain(
       'verifyHash(requiredFiles.server, requiredFiles.serverHash)',
     );
+    expect(launcher).toContain(
+      "reminderCreateHelper: 'bin/eventkit-reminder-create-helper'",
+    );
+    expect(launcher).toContain(
+      'EVENTKIT_REMINDER_CREATE_HELPER_SHA256: readHash(',
+    );
+    expect(launcher).toContain(
+      'EVENTKIT_REMINDER_CREATE_DISCLAIM_SHA256: readHash(',
+    );
   });
 });

@@ -206,7 +206,8 @@ function throwForStderr(stderr: string): never {
   // collapses them into a generic "System error occurred".
   if (
     message.startsWith('eventkit-read-helper-disclaim:') ||
-    message.startsWith('eventkit-calendar-create-helper-disclaim:')
+    message.startsWith('eventkit-calendar-create-helper-disclaim:') ||
+    message.startsWith('eventkit-reminder-create-helper-disclaim:')
   ) {
     throw new CliUserError(message);
   }
@@ -227,7 +228,7 @@ function throwForStderr(stderr: string): never {
 async function runEventCli(
   launch: ResolvedLaunch,
   args: string[],
-  mutationMayHaveCommitted = false,
+  mutationTarget?: 'calendar event' | 'reminder',
 ): Promise<ExecResult> {
   const { result, error } = await execFilePromise(launch.disclaimPath, [
     launch.cliPath,
@@ -244,8 +245,8 @@ async function runEventCli(
       const stderrDetail = stderr
         ? ` (stderr before kill: ${stderr.trim()})`
         : '';
-      const mutationWarning = mutationMayHaveCommitted
-        ? ' The event may already have been created. Do not retry automatically; inspect the target calendar first to avoid a duplicate.'
+      const mutationWarning = mutationTarget
+        ? ` The ${mutationTarget} may already have been created. Do not retry automatically; inspect the target ${mutationTarget === 'calendar event' ? 'calendar' : 'reminder list'} first to avoid a duplicate.`
         : '';
       throw new CliUserError(
         `event execution failed: timed out after ${result.timeoutMs} ms (killed)${stderrDetail}.${mutationWarning} ` +
@@ -364,6 +365,47 @@ function resolveCreateLaunchOrThrow(): ResolvedLaunch {
   return { cliPath, disclaimPath };
 }
 
+function resolveReminderCreateLaunchOrThrow(): ResolvedLaunch {
+  const projectRoot = findProjectRoot();
+  const binaryName = FILE_SYSTEM.REMINDER_CREATE_BINARY_NAME;
+  const canonicalPath = path.join(projectRoot, 'bin', binaryName);
+  const helperHash = requireSha256Environment(
+    'EVENTKIT_REMINDER_CREATE_HELPER_SHA256',
+    process.env.EVENTKIT_REMINDER_CREATE_HELPER_SHA256,
+  );
+  const { path: cliPath } = findSecureBinaryPath([canonicalPath], {
+    ...getEnvironmentBinaryConfig(),
+    expectedHash: helperHash,
+    allowedPaths: [canonicalPath],
+  });
+  if (!cliPath) {
+    throw new CliUserError(
+      `Reminder create-only EventKit helper was not found or failed integrity/signature validation at ${canonicalPath}. Rebuild with \`pnpm run build:helper\` and update EVENTKIT_REMINDER_CREATE_HELPER_SHA256.`,
+    );
+  }
+
+  const disclaimCanonicalPath = path.join(
+    projectRoot,
+    'bin',
+    FILE_SYSTEM.REMINDER_CREATE_DISCLAIM_BINARY_NAME,
+  );
+  const { path: disclaimPath } = findSecureBinaryPath([disclaimCanonicalPath], {
+    ...getEnvironmentBinaryConfig(),
+    expectedHash: requireSha256Environment(
+      'EVENTKIT_REMINDER_CREATE_DISCLAIM_SHA256',
+      process.env.EVENTKIT_REMINDER_CREATE_DISCLAIM_SHA256,
+    ),
+    maxFileSize: 1024 * 1024,
+    allowedPaths: [disclaimCanonicalPath],
+  });
+  if (!disclaimPath) {
+    throw new CliUserError(
+      `Reminder create-helper responsibility shim was not found or failed integrity/signature validation at ${disclaimCanonicalPath}. Rebuild with \`pnpm run build:helper\` and update EVENTKIT_REMINDER_CREATE_DISCLAIM_SHA256.`,
+    );
+  }
+  return { cliPath, disclaimPath };
+}
+
 /**
  * Executes the read-only helper and parses its stdout as raw JSON.
  *
@@ -401,7 +443,7 @@ export async function executeCalendarCreateCliJson<T>(
   args: string[],
 ): Promise<T> {
   const launch = resolveCreateLaunchOrThrow();
-  const { stdout } = await runEventCli(launch, args, true);
+  const { stdout } = await runEventCli(launch, args, 'calendar event');
   const normalized = bufferToString(stdout);
   if (!normalized) {
     throw new Error('event creation failed: Empty CLI output');
@@ -411,6 +453,24 @@ export async function executeCalendarCreateCliJson<T>(
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     throw new Error(`event creation failed: Invalid CLI output - ${detail}`);
+  }
+}
+
+/** Executes the separately signed create-only Reminders helper. */
+export async function executeReminderCreateCliJson<T>(
+  args: string[],
+): Promise<T> {
+  const launch = resolveReminderCreateLaunchOrThrow();
+  const { stdout } = await runEventCli(launch, args, 'reminder');
+  const normalized = bufferToString(stdout);
+  if (!normalized) {
+    throw new Error('reminder creation failed: Empty CLI output');
+  }
+  try {
+    return JSON.parse(normalized) as T;
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(`reminder creation failed: Invalid CLI output - ${detail}`);
   }
 }
 
